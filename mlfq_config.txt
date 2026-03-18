@@ -1,0 +1,6 @@
+# Multi-Level Feedback Queue Configuration
+# Format: QueueID TimeQuantum Allotment
+Q0 10 50
+Q1 30 150
+Q2 -1 -1
+BOOST_PERIOD 200

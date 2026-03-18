@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <limits.h>
 #include "scheduler.h"
+#include "trace.h"
 
 /*
 Shortest Job First
@@ -10,8 +11,13 @@ Select job with smallest burst time among arrived processes
 At each decision point, choose smallest burst among ready processes
 */
 
-void schedule_sjf(Process p[], int n)
+int schedule_sjf(SchedulerState *state)
 {
+    Process *p = state->processes;
+    int n = state->num_processes;
+
+    trace_reset();
+
     int completed = 0;
     int time = 0;
 
@@ -46,8 +52,14 @@ void schedule_sjf(Process p[], int n)
         }
 
         p[idx].start_time = time;
+        int start = time;
 
         time += p[idx].burst_time;
+        if (!trace_add_segment(idx, start, time))
+        {
+            fprintf(stderr, "Error: memory allocation failed in SJF trace.\n");
+            return -1;
+        }
 
         p[idx].finish_time = time;
 
@@ -63,4 +75,8 @@ void schedule_sjf(Process p[], int n)
         visited[idx] = 1;
         completed++;
     }
+
+    trace_set_context_switches(0);
+    state->current_time = time;
+    return 0;
 }
