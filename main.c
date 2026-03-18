@@ -38,8 +38,8 @@ static void reset_processes(Process p[], int n)
         p[i].turnaround_time = 0;
         p[i].waiting_time = 0;
         p[i].started = 0;
-        p[i].queue_level = 0;
-        p[i].allotment_used = 0;
+        p[i].priority = 0;
+        p[i].time_in_queue = 0;
     }
 }
 

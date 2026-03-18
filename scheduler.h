@@ -19,6 +19,21 @@ typedef struct {
 	int boost_period;
 } MLFQConfig;
 
+typedef struct {
+	int level;
+	int time_quantum;
+	int allotment;
+	Process *queue;
+	int size;
+} MLFQQueue;
+
+typedef struct {
+	MLFQQueue *queues;
+	int num_queues;
+	int boost_period;
+	int last_boost;
+} MLFQScheduler;
+
 void schedule_fcfs(Process p[], int n);
 void schedule_sjf(Process p[], int n);
 void schedule_stcf(Process p[], int n);

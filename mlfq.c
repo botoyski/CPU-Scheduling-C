@@ -66,8 +66,8 @@ static void enqueue_new_arrivals(Process p[], int n, int time, int arrived[], In
     {
         if (!arrived[i] && p[i].arrival_time <= time)
         {
-            p[i].queue_level = 0;
-            p[i].allotment_used = 0;
+            p[i].priority = 0;
+            p[i].time_in_queue = 0;
             queue_push(q0, i);
             arrived[i] = 1;
             if (!trace_is_quiet())
@@ -85,8 +85,8 @@ static void do_priority_boost(Process p[], int n, int completed[], int levels, I
             int idx = queue_pop(&queues[lvl]);
             if (!completed[idx])
             {
-                p[idx].queue_level = 0;
-                p[idx].allotment_used = 0;
+                p[idx].priority = 0;
+                p[idx].time_in_queue = 0;
                 queue_push(&queues[0], idx);
             }
         }
@@ -99,8 +99,8 @@ static void do_priority_boost(Process p[], int n, int completed[], int levels, I
         int idx = queue_pop(&queues[0]);
         if (!completed[idx])
         {
-            p[idx].queue_level = 0;
-            p[idx].allotment_used = 0;
+            p[idx].priority = 0;
+            p[idx].time_in_queue = 0;
             queue_push(&queues[0], idx);
         }
     }
@@ -201,12 +201,12 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
             p[idx].started = 1;
         }
 
-        if (config->allotment[level] != -1 && p[idx].allotment_used >= config->allotment[level])
+        if (config->allotment[level] != -1 && p[idx].time_in_queue >= config->allotment[level])
         {
             if (level < config->levels - 1)
             {
-                p[idx].queue_level = level + 1;
-                p[idx].allotment_used = 0;
+                p[idx].priority = level + 1;
+                p[idx].time_in_queue = 0;
                 queue_push(&queues[level + 1], idx);
                   if (!trace_is_quiet())
                       printf("t=%d: Process %s -> Q%d (exhausted Q%d allotment)\n",
@@ -231,7 +231,7 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
 
         if (config->allotment[level] != -1)
         {
-            int remaining_allot = config->allotment[level] - p[idx].allotment_used;
+            int remaining_allot = config->allotment[level] - p[idx].time_in_queue;
             if (remaining_allot < run_for)
                 run_for = remaining_allot;
         }
@@ -251,7 +251,7 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
         for (int tick = 0; tick < run_for; tick++)
         {
             p[idx].remaining_time--;
-            p[idx].allotment_used++;
+            p[idx].time_in_queue++;
             time++;
 
             enqueue_new_arrivals(p, n, time, arrived, &queues[0]);
@@ -286,8 +286,8 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
         }
         else if (config->boost_period > 0 && time == next_boost)
         {
-            p[idx].queue_level = 0;
-            p[idx].allotment_used = 0;
+            p[idx].priority = 0;
+            p[idx].time_in_queue = 0;
             queue_push(&queues[0], idx);
             do_priority_boost(p, n, completed, config->levels, queues, time);
             next_boost += config->boost_period;
@@ -295,12 +295,12 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
         else
         {
             int demoted = 0;
-            if (config->allotment[level] != -1 && p[idx].allotment_used >= config->allotment[level])
+            if (config->allotment[level] != -1 && p[idx].time_in_queue >= config->allotment[level])
             {
                 if (level < config->levels - 1)
                 {
-                    p[idx].queue_level = level + 1;
-                    p[idx].allotment_used = 0;
+                    p[idx].priority = level + 1;
+                    p[idx].time_in_queue = 0;
                     queue_push(&queues[level + 1], idx);
                     if (!trace_is_quiet())
                         printf("t=%d: Process %s -> Q%d (exhausted Q%d allotment)\n",

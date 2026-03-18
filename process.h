@@ -18,8 +18,8 @@ typedef struct {
 
     int started;            // flag if process has started execution
 
-    int queue_level;        // current queue level (MLFQ)
-    int allotment_used;     // CPU time consumed at current level (MLFQ)
+    int priority;           // current queue level (MLFQ, 0 = highest)
+    int time_in_queue;      // CPU time consumed at current level (MLFQ)
 
 } Process;
 
