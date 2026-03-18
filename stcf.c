@@ -1,6 +1,7 @@
 #include <stdio.h>
 #include <limits.h>
 #include "scheduler.h"
+#include "trace.h"
 
 /*
 Shortest Time to Completion First
@@ -12,8 +13,13 @@ At every clock tick, scheduler checks which process has smallest remaining CPU t
 
 void schedule_stcf(Process p[], int n)
 {
+    trace_reset();
+
     int time = 0;
     int completed = 0;
+    int current_pid = -1;
+    int segment_start = -1;
+    int context_switches = 0;
 
     while (completed < n)
     {
@@ -37,8 +43,33 @@ void schedule_stcf(Process p[], int n)
         /* CPU idle */
         if (idx == -1)
         {
+            if (current_pid != -1)
+            {
+                if (!trace_add_segment(current_pid, segment_start, time))
+                {
+                    fprintf(stderr, "Error: memory allocation failed in STCF trace.\n");
+                    return;
+                }
+                current_pid = -1;
+                segment_start = -1;
+            }
             time++;
             continue;
+        }
+
+        if (current_pid != idx)
+        {
+            if (current_pid != -1)
+            {
+                if (!trace_add_segment(current_pid, segment_start, time))
+                {
+                    fprintf(stderr, "Error: memory allocation failed in STCF trace.\n");
+                    return;
+                }
+                context_switches++;
+            }
+            current_pid = idx;
+            segment_start = time;
         }
 
         /* first execution */
@@ -61,6 +92,14 @@ void schedule_stcf(Process p[], int n)
         {
             completed++;
 
+            if (!trace_add_segment(idx, segment_start, time))
+            {
+                fprintf(stderr, "Error: memory allocation failed in STCF trace.\n");
+                return;
+            }
+            current_pid = -1;
+            segment_start = -1;
+
             p[idx].finish_time = time;
 
             p[idx].turnaround_time =
@@ -70,4 +109,6 @@ void schedule_stcf(Process p[], int n)
                 p[idx].turnaround_time - p[idx].burst_time;
         }
     }
+
+    trace_set_context_switches(context_switches);
 }

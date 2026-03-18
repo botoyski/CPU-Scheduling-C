@@ -2,6 +2,7 @@
 #include <stdlib.h>
 
 #include "scheduler.h"
+#include "trace.h"
 
 typedef struct {
     int *data;
@@ -49,34 +50,6 @@ static int queue_pop(IntQueue *q)
     return value;
 }
 
-static int ensure_segment_capacity(int **seg_pid, int **seg_start, int **seg_end, int *capacity, int needed)
-{
-    if (needed <= *capacity)
-        return 1;
-
-    int new_capacity = (*capacity <= 0) ? 16 : (*capacity * 2);
-    while (new_capacity < needed)
-        new_capacity *= 2;
-
-    int *new_pid = (int *)realloc(*seg_pid, (size_t)new_capacity * sizeof(int));
-    if (new_pid == NULL)
-        return 0;
-    *seg_pid = new_pid;
-
-    int *new_start = (int *)realloc(*seg_start, (size_t)new_capacity * sizeof(int));
-    if (new_start == NULL)
-        return 0;
-    *seg_start = new_start;
-
-    int *new_end = (int *)realloc(*seg_end, (size_t)new_capacity * sizeof(int));
-    if (new_end == NULL)
-        return 0;
-    *seg_end = new_end;
-
-    *capacity = new_capacity;
-    return 1;
-}
-
 static int highest_non_empty_queue(int levels, IntQueue queues[])
 {
     for (int lvl = 0; lvl < levels; lvl++)
@@ -97,7 +70,8 @@ static void enqueue_new_arrivals(Process p[], int n, int time, int arrived[], In
             p[i].allotment_used = 0;
             queue_push(q0, i);
             arrived[i] = 1;
-            printf("t=%d: Process %s enters Q0\n", p[i].arrival_time, p[i].pid);
+            if (!trace_is_quiet())
+                printf("t=%d: Process %s enters Q0\n", p[i].arrival_time, p[i].pid);
         }
     }
 }
@@ -131,11 +105,14 @@ static void do_priority_boost(Process p[], int n, int completed[], int levels, I
         }
     }
 
-    printf("t=%d: Priority boost: all ready processes -> Q0\n", time);
+    if (!trace_is_quiet())
+        printf("t=%d: Priority boost: all ready processes -> Q0\n", time);
 }
 
 void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
 {
+    trace_reset();
+
     int completed_count = 0;
     int time = 0;
     int context_switches = 0;
@@ -168,49 +145,31 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
         }
     }
 
-    int seg_capacity = 16;
-    int *seg_pid = (int *)malloc((size_t)seg_capacity * sizeof(int));
-    int *seg_start = (int *)malloc((size_t)seg_capacity * sizeof(int));
-    int *seg_end = (int *)malloc((size_t)seg_capacity * sizeof(int));
-    int seg_count = 0;
-
-    if (seg_pid == NULL || seg_start == NULL || seg_end == NULL)
-    {
-        fprintf(stderr, "Error: memory allocation failed in MLFQ scheduler.\n");
-        for (int lvl = 0; lvl < config->levels; lvl++)
-            queue_free(&queues[lvl]);
-        free(arrived);
-        free(completed);
-        free(queues);
-        free(seg_pid);
-        free(seg_start);
-        free(seg_end);
-        return;
-    }
-
     int next_boost = config->boost_period;
 
-    printf("\n=== MLFQ Configuration ===\n");
-    for (int lvl = 0; lvl < config->levels; lvl++)
+    if (!trace_is_quiet())
     {
-        if (config->quantum[lvl] == -1)
-            printf("Queue %d: FCFS", lvl);
-        else
-            printf("Queue %d: q=%d", lvl, config->quantum[lvl]);
+        printf("\n=== MLFQ Configuration ===\n");
+        for (int lvl = 0; lvl < config->levels; lvl++)
+        {
+            if (config->quantum[lvl] == -1)
+                printf("Queue %d: FCFS", lvl);
+            else
+                printf("Queue %d: q=%d", lvl, config->quantum[lvl]);
 
-        if (config->allotment[lvl] != -1)
-            printf(", allotment=%d", config->allotment[lvl]);
+            if (config->allotment[lvl] != -1)
+                printf(", allotment=%d", config->allotment[lvl]);
 
-        if (lvl == 0)
-            printf(" (highest priority)");
-        if (lvl == config->levels - 1)
-            printf(" (lowest priority)");
+            if (lvl == 0)
+                printf(" (highest priority)");
+            if (lvl == config->levels - 1)
+                printf(" (lowest priority)");
 
-        printf("\n");
+            printf("\n");
+        }
+        printf("Boost period: %d\n", config->boost_period);
+        printf("\n=== Execution Trace ===\n");
     }
-    printf("Boost period: %d\n", config->boost_period);
-
-    printf("\n=== Execution Trace ===\n");
 
     while (completed_count < n)
     {
@@ -249,11 +208,12 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
                 p[idx].queue_level = level + 1;
                 p[idx].allotment_used = 0;
                 queue_push(&queues[level + 1], idx);
-                printf("t=%d: Process %s -> Q%d (exhausted Q%d allotment)\n",
-                       time,
-                       p[idx].pid,
-                       level + 1,
-                       level);
+                  if (!trace_is_quiet())
+                      printf("t=%d: Process %s -> Q%d (exhausted Q%d allotment)\n",
+                          time,
+                          p[idx].pid,
+                          level + 1,
+                          level);
             }
             else
             {
@@ -303,7 +263,7 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
                 break;
         }
 
-        if (!ensure_segment_capacity(&seg_pid, &seg_start, &seg_end, &seg_capacity, seg_count + 1))
+        if (!trace_add_segment(idx, segment_start, time))
         {
             fprintf(stderr, "Error: memory allocation failed while recording MLFQ Gantt chart.\n");
             for (int lvl = 0; lvl < config->levels; lvl++)
@@ -311,16 +271,8 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
             free(arrived);
             free(completed);
             free(queues);
-            free(seg_pid);
-            free(seg_start);
-            free(seg_end);
             return;
         }
-
-        seg_pid[seg_count] = idx;
-        seg_start[seg_count] = segment_start;
-        seg_end[seg_count] = time;
-        seg_count++;
 
         if (p[idx].remaining_time == 0)
         {
@@ -329,7 +281,8 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
             p[idx].finish_time = time;
             p[idx].turnaround_time = p[idx].finish_time - p[idx].arrival_time;
             p[idx].waiting_time = p[idx].turnaround_time - p[idx].burst_time;
-            printf("t=%d: Process %s completes\n", time, p[idx].pid);
+            if (!trace_is_quiet())
+                printf("t=%d: Process %s completes\n", time, p[idx].pid);
         }
         else if (config->boost_period > 0 && time == next_boost)
         {
@@ -349,11 +302,12 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
                     p[idx].queue_level = level + 1;
                     p[idx].allotment_used = 0;
                     queue_push(&queues[level + 1], idx);
-                    printf("t=%d: Process %s -> Q%d (exhausted Q%d allotment)\n",
-                           time,
-                           p[idx].pid,
-                           level + 1,
-                           level);
+                    if (!trace_is_quiet())
+                        printf("t=%d: Process %s -> Q%d (exhausted Q%d allotment)\n",
+                               time,
+                               p[idx].pid,
+                               level + 1,
+                               level);
                     demoted = 1;
                 }
             }
@@ -365,25 +319,7 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
         prev_pid = idx;
     }
 
-    double avg_response = 0.0;
-    for (int i = 0; i < n; i++)
-        avg_response += p[i].response_time;
-    avg_response /= n;
-
-    printf("\n=== Gantt Chart ===\n");
-    for (int i = 0; i < seg_count; i++)
-        printf("[%s-]", p[seg_pid[i]].pid);
-
-    printf("\nTime:");
-    for (int i = 0; i < seg_count; i++)
-        printf(" %d", seg_start[i]);
-    if (seg_count > 0)
-        printf(" %d", seg_end[seg_count - 1]);
-    printf("\n\n");
-
-    printf("=== Analysis ===\n");
-    printf("Total context switches: %d\n", context_switches);
-    printf("Average response time: %.2f\n", avg_response);
+    trace_set_context_switches(context_switches);
 
     for (int lvl = 0; lvl < config->levels; lvl++)
         queue_free(&queues[lvl]);
@@ -391,7 +327,4 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
     free(arrived);
     free(completed);
     free(queues);
-    free(seg_pid);
-    free(seg_start);
-    free(seg_end);
 }

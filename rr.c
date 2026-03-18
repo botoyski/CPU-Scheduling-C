@@ -2,6 +2,7 @@
 #include <stdlib.h>
 
 #include "scheduler.h"
+#include "trace.h"
 
 typedef struct {
     int *data;
@@ -49,36 +50,10 @@ static int queue_pop(IntQueue *q)
     return value;
 }
 
-static int ensure_segment_capacity(int **seg_pid, int **seg_start, int **seg_end, int *capacity, int needed)
-{
-    if (needed <= *capacity)
-        return 1;
-
-    int new_capacity = (*capacity <= 0) ? 16 : (*capacity * 2);
-    while (new_capacity < needed)
-        new_capacity *= 2;
-
-    int *new_pid = (int *)realloc(*seg_pid, (size_t)new_capacity * sizeof(int));
-    if (new_pid == NULL)
-        return 0;
-    *seg_pid = new_pid;
-
-    int *new_start = (int *)realloc(*seg_start, (size_t)new_capacity * sizeof(int));
-    if (new_start == NULL)
-        return 0;
-    *seg_start = new_start;
-
-    int *new_end = (int *)realloc(*seg_end, (size_t)new_capacity * sizeof(int));
-    if (new_end == NULL)
-        return 0;
-    *seg_end = new_end;
-
-    *capacity = new_capacity;
-    return 1;
-}
-
 void schedule_rr(Process p[], int n, int quantum)
 {
+    trace_reset();
+
     int completed = 0;
     int time = 0;
     int context_switches = 0;
@@ -94,20 +69,11 @@ void schedule_rr(Process p[], int n, int quantum)
         return;
     }
 
-    int seg_capacity = 16;
-    int *seg_pid = (int *)malloc((size_t)seg_capacity * sizeof(int));
-    int *seg_start = (int *)malloc((size_t)seg_capacity * sizeof(int));
-    int *seg_end = (int *)malloc((size_t)seg_capacity * sizeof(int));
-    int seg_count = 0;
-
-    if (arrived == NULL || seg_pid == NULL || seg_start == NULL || seg_end == NULL)
+    if (arrived == NULL)
     {
         fprintf(stderr, "Error: memory allocation failed in RR scheduler.\n");
         free(arrived);
         queue_free(&ready_queue);
-        free(seg_pid);
-        free(seg_start);
-        free(seg_end);
         return;
     }
 
@@ -164,21 +130,13 @@ void schedule_rr(Process p[], int n, int quantum)
                 break;
         }
 
-        if (!ensure_segment_capacity(&seg_pid, &seg_start, &seg_end, &seg_capacity, seg_count + 1))
+        if (!trace_add_segment(idx, segment_start, time))
         {
             fprintf(stderr, "Error: memory allocation failed while recording RR Gantt chart.\n");
             free(arrived);
             queue_free(&ready_queue);
-            free(seg_pid);
-            free(seg_start);
-            free(seg_end);
             return;
         }
-
-        seg_pid[seg_count] = idx;
-        seg_start[seg_count] = segment_start;
-        seg_end[seg_count] = time;
-        seg_count++;
 
         if (p[idx].remaining_time == 0)
         {
@@ -195,29 +153,8 @@ void schedule_rr(Process p[], int n, int quantum)
         prev_pid = idx;
     }
 
-    double avg_response = 0.0;
-    for (int i = 0; i < n; i++)
-        avg_response += p[i].response_time;
-    avg_response /= n;
-
-    printf("\nUsing time quantum q=%d\n", quantum);
-    printf("\n=== Gantt Chart ===\n");
-    for (int i = 0; i < seg_count; i++)
-        printf("[%s-]", p[seg_pid[i]].pid);
-
-    printf("\nTime:");
-    for (int i = 0; i < seg_count; i++)
-        printf(" %d", seg_start[i]);
-    if (seg_count > 0)
-        printf(" %d", seg_end[seg_count - 1]);
-    printf("\n\n");
-
-    printf("Total context switches: %d\n", context_switches);
-    printf("Average response time: %.2f\n", avg_response);
+    trace_set_context_switches(context_switches);
 
     free(arrived);
     queue_free(&ready_queue);
-    free(seg_pid);
-    free(seg_start);
-    free(seg_end);
 }

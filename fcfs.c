@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include "scheduler.h"
+#include "trace.h"
 
 /*
 FCFS Scheduling
@@ -11,6 +12,8 @@ executes: arrival order → run until completion
 
 void schedule_fcfs(Process p[], int n)
 {
+    trace_reset();
+
     int completed = 0;
     int time = 0;
     int done[n];
@@ -53,7 +56,13 @@ void schedule_fcfs(Process p[], int n)
         p[idx].started = 1;
 
         /* Execute full burst */
+        int start = time;
         time += p[idx].burst_time;
+        if (!trace_add_segment(idx, start, time))
+        {
+            fprintf(stderr, "Error: memory allocation failed in FCFS trace.\n");
+            return;
+        }
 
         /* Process completes */
         p[idx].finish_time = time;
@@ -65,4 +74,6 @@ void schedule_fcfs(Process p[], int n)
         done[idx] = 1;
         completed++;
     }
+
+    trace_set_context_switches(0);
 }

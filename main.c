@@ -5,14 +5,14 @@
 
 #include "process.h"
 #include "scheduler.h"
-
-void print_results(Process p[], int n);
+#include "trace.h"
 
 typedef struct {
     char algorithm[16];
     const char *input_path;
     const char *mlfq_config_path;
     int quantum;
+    int compare;
 } CliOptions;
 
 static int equals_ignore_case(const char *a, const char *b)
@@ -250,9 +250,11 @@ static void print_usage(const char *prog_name)
 {
     printf("Usage:\n");
     printf("  %s --algorithm=FCFS|SJF|STCF|RR|MLFQ --input=workload.txt [options]\n", prog_name);
+    printf("  %s --compare --input=workload.txt [options]\n", prog_name);
     printf("\nOptions:\n");
     printf("  --quantum=<q>           Time quantum for RR (default: 30)\n");
     printf("  --mlfq-config=<file>    MLFQ config file path\n");
+    printf("  --compare               Run all algorithms on the same workload\n");
 }
 
 static int parse_cli(int argc, char *argv[], CliOptions *options)
@@ -261,6 +263,7 @@ static int parse_cli(int argc, char *argv[], CliOptions *options)
     options->input_path = NULL;
     options->mlfq_config_path = NULL;
     options->quantum = 30;
+    options->compare = 0;
 
     for (int i = 1; i < argc; i++)
     {
@@ -280,6 +283,10 @@ static int parse_cli(int argc, char *argv[], CliOptions *options)
         else if (strncmp(argv[i], "--mlfq-config=", 14) == 0)
         {
             options->mlfq_config_path = argv[i] + 14;
+        }
+        else if (equals_ignore_case(argv[i], "--compare"))
+        {
+            options->compare = 1;
         }
         else if (equals_ignore_case(argv[i], "--help"))
         {
@@ -307,13 +314,60 @@ static int parse_cli(int argc, char *argv[], CliOptions *options)
         return 0;
     }
 
-    if (equals_ignore_case(options->algorithm, "MLFQ") && options->mlfq_config_path == NULL)
+    if (!options->compare && equals_ignore_case(options->algorithm, "MLFQ") && options->mlfq_config_path == NULL)
     {
         fprintf(stderr, "Error: --mlfq-config is required for MLFQ.\n");
         return 0;
     }
 
     return 1;
+}
+
+static void fill_default_mlfq_config(MLFQConfig *config)
+{
+    config->levels = 3;
+    config->quantum[0] = 10;
+    config->allotment[0] = 50;
+    config->quantum[1] = 30;
+    config->allotment[1] = 150;
+    config->quantum[2] = -1;
+    config->allotment[2] = -1;
+    config->boost_period = 200;
+}
+
+static void print_compare_table(const char *input_path,
+                                int rr_quantum,
+                                const MetricsSummary rows[5])
+{
+    printf("\n=== Algorithm Comparison for %s ===\n\n", input_path);
+    printf("Algorithm | Avg TT | Avg WT | Avg RT | Context Switches\n");
+    printf("----------|--------|--------|--------|------------------\n");
+    printf("FCFS      | %6.1f | %6.1f | %6.1f | %16d\n",
+           rows[0].avg_turnaround,
+           rows[0].avg_waiting,
+           rows[0].avg_response,
+           rows[0].context_switches);
+    printf("SJF       | %6.1f | %6.1f | %6.1f | %16d\n",
+           rows[1].avg_turnaround,
+           rows[1].avg_waiting,
+           rows[1].avg_response,
+           rows[1].context_switches);
+    printf("STCF      | %6.1f | %6.1f | %6.1f | %16d\n",
+           rows[2].avg_turnaround,
+           rows[2].avg_waiting,
+           rows[2].avg_response,
+           rows[2].context_switches);
+    printf("RR (q=%d) | %6.1f | %6.1f | %6.1f | %16d\n",
+           rr_quantum,
+           rows[3].avg_turnaround,
+           rows[3].avg_waiting,
+           rows[3].avg_response,
+           rows[3].context_switches);
+    printf("MLFQ      | %6.1f | %6.1f | %6.1f | %16d\n",
+           rows[4].avg_turnaround,
+           rows[4].avg_waiting,
+           rows[4].avg_response,
+           rows[4].context_switches);
 }
 
 int main(int argc, char *argv[])
@@ -327,6 +381,52 @@ int main(int argc, char *argv[])
 
     if (!load_workload(options.input_path, &processes, &n))
         return 1;
+
+    if (options.compare)
+    {
+        MLFQConfig config;
+        if (options.mlfq_config_path != NULL)
+        {
+            if (!parse_mlfq_config(options.mlfq_config_path, &config))
+            {
+                free(processes);
+                return 1;
+            }
+        }
+        else
+        {
+            fill_default_mlfq_config(&config);
+        }
+
+        MetricsSummary rows[5];
+        trace_set_quiet(1);
+
+        reset_processes(processes, n);
+        schedule_fcfs(processes, n);
+        compute_metrics_summary(processes, n, &rows[0]);
+
+        reset_processes(processes, n);
+        schedule_sjf(processes, n);
+        compute_metrics_summary(processes, n, &rows[1]);
+
+        reset_processes(processes, n);
+        schedule_stcf(processes, n);
+        compute_metrics_summary(processes, n, &rows[2]);
+
+        reset_processes(processes, n);
+        schedule_rr(processes, n, options.quantum);
+        compute_metrics_summary(processes, n, &rows[3]);
+
+        reset_processes(processes, n);
+        schedule_mlfq(processes, n, &config);
+        compute_metrics_summary(processes, n, &rows[4]);
+
+        trace_set_quiet(0);
+        print_compare_table(options.input_path, options.quantum, rows);
+
+        free(processes);
+        return 0;
+    }
 
     if (equals_ignore_case(options.algorithm, "FCFS"))
     {
@@ -349,6 +449,7 @@ int main(int argc, char *argv[])
     else if (equals_ignore_case(options.algorithm, "RR"))
     {
         printf("\nRunning RR\n");
+        printf("Using time quantum q=%d\n", options.quantum);
         schedule_rr(processes, n, options.quantum);
         print_results(processes, n);
     }
