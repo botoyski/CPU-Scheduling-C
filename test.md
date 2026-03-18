@@ -54,70 +54,15 @@
 The test harness validates your simulator as a child process spawned via fork() and exec():
 
 ```bash
-gcc -Wall test_exec_model.c -o test_exec_model
-./test_exec_model
+/mnt/c/Users/Botoy/Desktop/3rd\ Year/CMSC\ 125/mysh/CMSC-125-lab1/mysh
+mysh> ./schedsim --algorithm=FCFS --input=workload.txt
 ```
 
-**What it validates:**
-- ✓ Simulator launches correctly via execvp() from child process
-- ✓ All algorithms (FCFS, SJF, STCF, RR, MLFQ) return exit code 0
-- ✓ Compare mode works via fork/exec
-- ✓ Error conditions return exit code 1 from child
-- ✓ Command-line arguments properly passed through argv
-- ✓ stdin/stdout/stderr correctly inherited
+### Standalone ###
+./schedsim --algorithm=FCFS --input=workload.txt
 
-### Manual fork/exec Test
-
-You can also test manually with a simple parent process:
-
-```bash
-cat > manual_fork_test.c << 'EOF'
-#include <stdio.h>
-#include <stdlib.h>
-#include <unistd.h>
-#include <sys/wait.h>
-
-int main() {
-    printf("Parent PID: %d\n", getpid());
-    
-    pid_t pid = fork();
-    if (pid < 0) {
-        perror("fork failed");
-        return 1;
-    }
-    
-    if (pid == 0) {
-        // Child process
-        printf("Child PID: %d (parent: %d)\n", getpid(), getppid());
-        
-        char *args[] = {
-            "./schedsim", 
-            "--algorithm=FCFS", 
-            "--input=workload.txt", 
-            NULL
-        };
-        
-        execvp(args[0], args);
-        perror("exec failed");
-        exit(1);
-    } else {
-        // Parent waits
-        int status;
-        waitpid(pid, &status, 0);
-        
-        if (WIFEXITED(status)) {
-            int exit_code = WEXITSTATUS(status);
-            printf("Child exited with code: %d\n", exit_code);
-            return exit_code;
-        }
-    }
-    
-    return 0;
-}
-EOF
-gcc -Wall manual_fork_test.c -o manual_fork_test
-./manual_fork_test
-```
+### Fork/Exec Test ###
+./test_exec
 
 ### Shell Integration Test (Lab 1 Context)
 
