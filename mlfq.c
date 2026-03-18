@@ -109,8 +109,11 @@ static void do_priority_boost(Process p[], int n, int completed[], int levels, I
         printf("t=%d: Priority boost: all ready processes -> Q0\n", time);
 }
 
-void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
+int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
 {
+    Process *p = state->processes;
+    int n = state->num_processes;
+
     trace_reset();
 
     int completed_count = 0;
@@ -128,7 +131,7 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
         free(arrived);
         free(completed);
         free(queues);
-        return;
+        return -1;
     }
 
     for (int lvl = 0; lvl < config->levels; lvl++)
@@ -141,7 +144,7 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
             free(arrived);
             free(completed);
             free(queues);
-            return;
+            return -1;
         }
     }
 
@@ -271,7 +274,7 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
             free(arrived);
             free(completed);
             free(queues);
-            return;
+            return -1;
         }
 
         if (p[idx].remaining_time == 0)
@@ -320,6 +323,7 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
     }
 
     trace_set_context_switches(context_switches);
+    state->current_time = time;
 
     for (int lvl = 0; lvl < config->levels; lvl++)
         queue_free(&queues[lvl]);
@@ -327,4 +331,5 @@ void schedule_mlfq(Process p[], int n, const MLFQConfig *config)
     free(arrived);
     free(completed);
     free(queues);
+    return 0;
 }

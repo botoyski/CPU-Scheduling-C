@@ -11,8 +11,11 @@ Select job with smallest burst time among arrived processes
 At each decision point, choose smallest burst among ready processes
 */
 
-void schedule_sjf(Process p[], int n)
+int schedule_sjf(SchedulerState *state)
 {
+    Process *p = state->processes;
+    int n = state->num_processes;
+
     trace_reset();
 
     int completed = 0;
@@ -55,7 +58,7 @@ void schedule_sjf(Process p[], int n)
         if (!trace_add_segment(idx, start, time))
         {
             fprintf(stderr, "Error: memory allocation failed in SJF trace.\n");
-            return;
+            return -1;
         }
 
         p[idx].finish_time = time;
@@ -74,4 +77,6 @@ void schedule_sjf(Process p[], int n)
     }
 
     trace_set_context_switches(0);
+    state->current_time = time;
+    return 0;
 }

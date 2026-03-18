@@ -34,11 +34,17 @@ typedef struct {
 	int last_boost;
 } MLFQScheduler;
 
-void schedule_fcfs(Process p[], int n);
-void schedule_sjf(Process p[], int n);
-void schedule_stcf(Process p[], int n);
-void schedule_rr(Process p[], int n, int quantum);
-void schedule_mlfq(Process p[], int n, const MLFQConfig *config);
+typedef struct {
+	Process *processes;
+	int num_processes;
+	int current_time;
+} SchedulerState;
+
+int schedule_fcfs(SchedulerState *state);
+int schedule_sjf(SchedulerState *state);
+int schedule_stcf(SchedulerState *state);
+int schedule_rr(SchedulerState *state, int quantum);
+int schedule_mlfq(SchedulerState *state, MLFQConfig *config);
 
 void print_results(Process p[], int n);
 void compute_metrics_summary(Process p[], int n, MetricsSummary *summary);

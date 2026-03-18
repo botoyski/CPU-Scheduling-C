@@ -382,6 +382,11 @@ int main(int argc, char *argv[])
     if (!load_workload(options.input_path, &processes, &n))
         return 1;
 
+    SchedulerState state;
+    state.processes = processes;
+    state.num_processes = n;
+    state.current_time = 0;
+
     if (options.compare)
     {
         MLFQConfig config;
@@ -402,23 +407,53 @@ int main(int argc, char *argv[])
         trace_set_quiet(1);
 
         reset_processes(processes, n);
-        schedule_fcfs(processes, n);
+        state.current_time = 0;
+        if (schedule_fcfs(&state) != 0)
+        {
+            trace_set_quiet(0);
+            free(processes);
+            return 1;
+        }
         compute_metrics_summary(processes, n, &rows[0]);
 
         reset_processes(processes, n);
-        schedule_sjf(processes, n);
+        state.current_time = 0;
+        if (schedule_sjf(&state) != 0)
+        {
+            trace_set_quiet(0);
+            free(processes);
+            return 1;
+        }
         compute_metrics_summary(processes, n, &rows[1]);
 
         reset_processes(processes, n);
-        schedule_stcf(processes, n);
+        state.current_time = 0;
+        if (schedule_stcf(&state) != 0)
+        {
+            trace_set_quiet(0);
+            free(processes);
+            return 1;
+        }
         compute_metrics_summary(processes, n, &rows[2]);
 
         reset_processes(processes, n);
-        schedule_rr(processes, n, options.quantum);
+        state.current_time = 0;
+        if (schedule_rr(&state, options.quantum) != 0)
+        {
+            trace_set_quiet(0);
+            free(processes);
+            return 1;
+        }
         compute_metrics_summary(processes, n, &rows[3]);
 
         reset_processes(processes, n);
-        schedule_mlfq(processes, n, &config);
+        state.current_time = 0;
+        if (schedule_mlfq(&state, &config) != 0)
+        {
+            trace_set_quiet(0);
+            free(processes);
+            return 1;
+        }
         compute_metrics_summary(processes, n, &rows[4]);
 
         trace_set_quiet(0);
@@ -431,26 +466,42 @@ int main(int argc, char *argv[])
     if (equals_ignore_case(options.algorithm, "FCFS"))
     {
         printf("\nRunning FCFS\n");
-        schedule_fcfs(processes, n);
+        if (schedule_fcfs(&state) != 0)
+        {
+            free(processes);
+            return 1;
+        }
         print_results(processes, n);
     }
     else if (equals_ignore_case(options.algorithm, "SJF"))
     {
         printf("\nRunning SJF\n");
-        schedule_sjf(processes, n);
+        if (schedule_sjf(&state) != 0)
+        {
+            free(processes);
+            return 1;
+        }
         print_results(processes, n);
     }
     else if (equals_ignore_case(options.algorithm, "STCF"))
     {
         printf("\nRunning STCF\n");
-        schedule_stcf(processes, n);
+        if (schedule_stcf(&state) != 0)
+        {
+            free(processes);
+            return 1;
+        }
         print_results(processes, n);
     }
     else if (equals_ignore_case(options.algorithm, "RR"))
     {
         printf("\nRunning RR\n");
         printf("Using time quantum q=%d\n", options.quantum);
-        schedule_rr(processes, n, options.quantum);
+        if (schedule_rr(&state, options.quantum) != 0)
+        {
+            free(processes);
+            return 1;
+        }
         print_results(processes, n);
     }
     else if (equals_ignore_case(options.algorithm, "MLFQ"))
@@ -463,7 +514,11 @@ int main(int argc, char *argv[])
         }
 
         printf("\nRunning MLFQ\n");
-        schedule_mlfq(processes, n, &config);
+        if (schedule_mlfq(&state, &config) != 0)
+        {
+            free(processes);
+            return 1;
+        }
         print_results(processes, n);
     }
     else

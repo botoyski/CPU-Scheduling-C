@@ -11,8 +11,11 @@ Every time unit find process with smallest remaining time
 At every clock tick, scheduler checks which process has smallest remaining CPU time
 */
 
-void schedule_stcf(Process p[], int n)
+int schedule_stcf(SchedulerState *state)
 {
+    Process *p = state->processes;
+    int n = state->num_processes;
+
     trace_reset();
 
     int time = 0;
@@ -48,7 +51,7 @@ void schedule_stcf(Process p[], int n)
                 if (!trace_add_segment(current_pid, segment_start, time))
                 {
                     fprintf(stderr, "Error: memory allocation failed in STCF trace.\n");
-                    return;
+                    return -1;
                 }
                 current_pid = -1;
                 segment_start = -1;
@@ -64,7 +67,7 @@ void schedule_stcf(Process p[], int n)
                 if (!trace_add_segment(current_pid, segment_start, time))
                 {
                     fprintf(stderr, "Error: memory allocation failed in STCF trace.\n");
-                    return;
+                    return -1;
                 }
                 context_switches++;
             }
@@ -95,7 +98,7 @@ void schedule_stcf(Process p[], int n)
             if (!trace_add_segment(idx, segment_start, time))
             {
                 fprintf(stderr, "Error: memory allocation failed in STCF trace.\n");
-                return;
+                return -1;
             }
             current_pid = -1;
             segment_start = -1;
@@ -111,4 +114,6 @@ void schedule_stcf(Process p[], int n)
     }
 
     trace_set_context_switches(context_switches);
+    state->current_time = time;
+    return 0;
 }

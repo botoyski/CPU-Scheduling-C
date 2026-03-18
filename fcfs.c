@@ -10,8 +10,11 @@ Non-preemptive
 executes: arrival order → run until completion
 */
 
-void schedule_fcfs(Process p[], int n)
+int schedule_fcfs(SchedulerState *state)
 {
+    Process *p = state->processes;
+    int n = state->num_processes;
+
     trace_reset();
 
     int completed = 0;
@@ -61,7 +64,7 @@ void schedule_fcfs(Process p[], int n)
         if (!trace_add_segment(idx, start, time))
         {
             fprintf(stderr, "Error: memory allocation failed in FCFS trace.\n");
-            return;
+            return -1;
         }
 
         /* Process completes */
@@ -76,4 +79,6 @@ void schedule_fcfs(Process p[], int n)
     }
 
     trace_set_context_switches(0);
+    state->current_time = time;
+    return 0;
 }

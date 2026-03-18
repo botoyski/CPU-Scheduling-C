@@ -50,8 +50,11 @@ static int queue_pop(IntQueue *q)
     return value;
 }
 
-void schedule_rr(Process p[], int n, int quantum)
+int schedule_rr(SchedulerState *state, int quantum)
 {
+    Process *p = state->processes;
+    int n = state->num_processes;
+
     trace_reset();
 
     int completed = 0;
@@ -66,7 +69,7 @@ void schedule_rr(Process p[], int n, int quantum)
     {
         free(arrived);
         fprintf(stderr, "Error: memory allocation failed in RR scheduler.\n");
-        return;
+        return -1;
     }
 
     if (arrived == NULL)
@@ -74,7 +77,7 @@ void schedule_rr(Process p[], int n, int quantum)
         fprintf(stderr, "Error: memory allocation failed in RR scheduler.\n");
         free(arrived);
         queue_free(&ready_queue);
-        return;
+        return -1;
     }
 
     while (completed < n)
@@ -135,7 +138,7 @@ void schedule_rr(Process p[], int n, int quantum)
             fprintf(stderr, "Error: memory allocation failed while recording RR Gantt chart.\n");
             free(arrived);
             queue_free(&ready_queue);
-            return;
+            return -1;
         }
 
         if (p[idx].remaining_time == 0)
@@ -154,7 +157,9 @@ void schedule_rr(Process p[], int n, int quantum)
     }
 
     trace_set_context_switches(context_switches);
+    state->current_time = time;
 
     free(arrived);
     queue_free(&ready_queue);
+    return 0;
 }
