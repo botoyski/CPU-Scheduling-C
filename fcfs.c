@@ -11,26 +11,58 @@ executes: arrival order → run until completion
 
 void schedule_fcfs(Process p[], int n)
 {
+    int completed = 0;
     int time = 0;
+    int done[n];
 
     for (int i = 0; i < n; i++)
+        done[i] = 0;
+
+    while (completed < n)
     {
-        /* If CPU idle, jump to arrival */
-        if (time < p[i].arrival_time)
-            time = p[i].arrival_time;
+        int idx = -1;
+        int min_arrival = 2147483647;
+
+        for (int i = 0; i < n; i++)
+        {
+            if (!done[i] && p[i].arrival_time <= time)
+            {
+                if (p[i].arrival_time < min_arrival)
+                {
+                    min_arrival = p[i].arrival_time;
+                    idx = i;
+                }
+            }
+        }
+
+        if (idx == -1)
+        {
+            int next_arrival = 2147483647;
+            for (int i = 0; i < n; i++)
+            {
+                if (!done[i] && p[i].arrival_time < next_arrival)
+                    next_arrival = p[i].arrival_time;
+            }
+            time = next_arrival;
+            continue;
+        }
 
         /* Process starts */
-        p[i].start_time = time;
+        p[idx].start_time = time;
+        p[idx].response_time = p[idx].start_time - p[idx].arrival_time;
+        p[idx].started = 1;
 
         /* Execute full burst */
-        time += p[i].burst_time;
+        time += p[idx].burst_time;
 
         /* Process completes */
-        p[i].finish_time = time;
+        p[idx].finish_time = time;
 
         /* Metrics */
-        p[i].turnaround_time = p[i].finish_time - p[i].arrival_time;
-        p[i].waiting_time = p[i].turnaround_time - p[i].burst_time;
-        p[i].response_time = p[i].start_time - p[i].arrival_time;
+        p[idx].turnaround_time = p[idx].finish_time - p[idx].arrival_time;
+        p[idx].waiting_time = p[idx].turnaround_time - p[idx].burst_time;
+
+        done[idx] = 1;
+        completed++;
     }
 }

@@ -2,7 +2,7 @@
 #define PROCESS_H
 
 typedef struct {
-    int pid;                // Process ID
+    char pid[16];           // Process ID label
 
     int arrival_time;       // Time process enters system
     int burst_time;         // Total CPU time required
@@ -17,6 +17,9 @@ typedef struct {
     int waiting_time;       // turnaround_time - burst_time
 
     int started;            // flag if process has started execution
+
+    int queue_level;        // current queue level (MLFQ)
+    int allotment_used;     // CPU time consumed at current level (MLFQ)
 
 } Process;
 

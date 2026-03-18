@@ -5,7 +5,7 @@
 /*
 Shortest Time to Completion First
 Preemptive version of SJF
-Every time unit choose process with smallest remaining time
+Every time unit find process with smallest remaining time
 
 At every clock tick, scheduler checks which process has smallest remaining CPU time
 */

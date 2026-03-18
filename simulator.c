@@ -9,11 +9,11 @@ void print_results(Process p[], int n)
     double avg_wait = 0;
     double avg_response = 0;
 
-    printf("\nPID  AT  BT  CT  TAT  WT  RT\n");
+       printf("\nPID            AT   BT   CT   TAT   WT   RT\n");
 
     for (int i = 0; i < n; i++)
     {
-        printf("%3d %3d %3d %3d %4d %3d %3d\n",
+              printf("%-14s %3d %4d %4d %5d %4d %4d\n",
                p[i].pid,
                p[i].arrival_time,
                p[i].burst_time,
