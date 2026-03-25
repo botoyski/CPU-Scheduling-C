@@ -7,6 +7,8 @@ static int g_count = 0;
 static int g_capacity = 0;
 static int g_context_switches = 0;
 static int g_quiet = 0;
+/* Cursor optimizes sequential trace_pid_at_time calls (common in Gantt rendering). */
+static int g_lookup_cursor = 0;
 
 static int ensure_capacity(int needed)
 {
@@ -30,6 +32,7 @@ void trace_reset(void)
 {
     g_count = 0;
     g_context_switches = 0;
+    g_lookup_cursor = 0;
 }
 
 void trace_free(void)
@@ -39,6 +42,7 @@ void trace_free(void)
     g_capacity = 0;
     g_count = 0;
     g_context_switches = 0;
+    g_lookup_cursor = 0;
 }
 
 int trace_add_segment(int pid_index, int start, int end)
@@ -85,11 +89,51 @@ int trace_total_time(void)
 
 int trace_pid_at_time(int time)
 {
-    for (int i = 0; i < g_count; i++)
+    if (g_count == 0)
+        return -1;
+
+    /* Fast path for monotonically increasing time queries. */
+    if (g_lookup_cursor >= 0 && g_lookup_cursor < g_count)
     {
-        if (g_segments[i].start <= time && time < g_segments[i].end)
-            return g_segments[i].pid_index;
+        while (g_lookup_cursor < g_count && time >= g_segments[g_lookup_cursor].end)
+            g_lookup_cursor++;
+
+        if (g_lookup_cursor < g_count && g_segments[g_lookup_cursor].start <= time && time < g_segments[g_lookup_cursor].end)
+            return g_segments[g_lookup_cursor].pid_index;
+
+        while (g_lookup_cursor > 0 && time < g_segments[g_lookup_cursor].start)
+            g_lookup_cursor--;
+
+        if (g_segments[g_lookup_cursor].start <= time && time < g_segments[g_lookup_cursor].end)
+            return g_segments[g_lookup_cursor].pid_index;
     }
+
+    /* Fallback for random-access queries. */
+    int lo = 0;
+    int hi = g_count - 1;
+    while (lo <= hi)
+    {
+        int mid = lo + (hi - lo) / 2;
+        if (time < g_segments[mid].start)
+        {
+            hi = mid - 1;
+        }
+        else if (time >= g_segments[mid].end)
+        {
+            lo = mid + 1;
+        }
+        else
+        {
+            g_lookup_cursor = mid;
+            return g_segments[mid].pid_index;
+        }
+    }
+
+    if (lo > 0)
+        g_lookup_cursor = lo - 1;
+    else
+        g_lookup_cursor = 0;
+
     return -1;
 }
 
