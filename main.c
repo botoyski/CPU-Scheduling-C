@@ -725,6 +725,7 @@ int main(int argc, char *argv[])
     else
     {
         fprintf(stderr, "Error: unknown algorithm '%s'.\n", options.algorithm);
+        trace_free();
         free(processes);
         return 1;
     }

@@ -146,6 +146,27 @@ int main() {
             (const char *[]){"./schedsim", "--algorithm=MLFQ", "--mlfq-config=mlfq_config_invalid_boost0.txt", "--input=workload_short.txt", NULL},
             1, 1
         },
+
+        // Test 12: RR very small quantum
+        {
+            "Fork/Exec RR quantum=1",
+            (const char *[]){"./schedsim", "--algorithm=RR", "--quantum=1", "--input=workload_short.txt", NULL},
+            0, 1
+        },
+
+        // Test 13: RR invalid negative quantum
+        {
+            "Fork/Exec Error: RR quantum=-5",
+            (const char *[]){"./schedsim", "--algorithm=RR", "--quantum=-5", "--input=workload_short.txt", NULL},
+            1, 1
+        },
+
+        // Test 14: RR long workload stress path
+        {
+            "Fork/Exec RR with long workload",
+            (const char *[]){"./schedsim", "--algorithm=RR", "--quantum=7", "--input=workload_long.txt", NULL},
+            0, 1
+        },
     };
     
     int num_tests = sizeof(tests) / sizeof(tests[0]);

@@ -2,6 +2,10 @@
 #include "queue.h"
 
 int queue_init(IntQueue *q, int capacity) {
+    if (q == NULL || capacity <= 0) {
+        return 0;
+    }
+
     q->data = (int *)malloc((size_t)capacity * sizeof(int));
     if (q->data == NULL) {
         return 0;

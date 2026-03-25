@@ -8,8 +8,12 @@ test-metrics:
 	$(CC) $(CFLAGS) test_metrics.c simulator.c trace.c -o test_metrics
 	./test_metrics
 
+test-queue:
+	$(CC) $(CFLAGS) test_queue.c queue.c -o test_queue
+	./test_queue
+
 run:
 	./schedsim
 
 clean:
-	rm -f schedsim test_metrics
+	rm -f schedsim test_metrics test_queue
