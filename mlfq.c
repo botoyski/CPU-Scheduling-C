@@ -70,7 +70,11 @@ static int do_priority_boost(Process p[], int n, int completed[], int levels, In
         }
     }
 
-    /* Keep queue 0 jobs but refresh their queue/accounting state. */
+    /*
+    Snapshot queue size so we only rotate jobs that were already in Q0
+    before this boost. This avoids reprocessing entries that are enqueued
+    during this loop.
+    */
     int q0_size = queues[0].size;
     for (int i = 0; i < q0_size; i++)
     {
@@ -98,6 +102,24 @@ static int do_priority_boost(Process p[], int n, int completed[], int levels, In
 
 int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
 {
+    if (state == NULL || config == NULL || state->processes == NULL)
+    {
+        fprintf(stderr, "Error: invalid scheduler state/config for MLFQ.\n");
+        return -1;
+    }
+
+    if (config->levels <= 0 || config->levels > MLFQ_MAX_LEVELS)
+    {
+        fprintf(stderr, "Error: invalid MLFQ levels=%d.\n", config->levels);
+        return -1;
+    }
+
+    if (config->boost_period <= 0)
+    {
+        fprintf(stderr, "Error: invalid MLFQ boost period=%d.\n", config->boost_period);
+        return -1;
+    }
+
     Process *p = state->processes;
     int n = state->num_processes;
 

@@ -1,0 +1,5 @@
+# Tiny valid boost period for boundary testing
+Q0 10 50
+Q1 30 150
+Q2 -1 -1
+BOOST_PERIOD 1
