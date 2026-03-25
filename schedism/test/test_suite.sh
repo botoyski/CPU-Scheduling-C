@@ -32,6 +32,18 @@ print_fail() {
     ((TESTS_FAILED++))
 }
 
+# Expect command to fail (non-zero exit)
+expect_fail() {
+    local name="$1"
+    shift
+
+    if timeout 10s "$@" > /dev/null 2>&1; then
+        print_fail "$name (unexpected success)"
+    else
+        print_pass "$name"
+    fi
+}
+
 # Build the project
 print_header "Building Project"
 cd "$PROJECT_DIR"
@@ -143,6 +155,24 @@ for quantum in 5 10 25 50; do
         print_fail "RR with quantum=$quantum"
     fi
 done
+
+# Negative tests (error-path validation)
+print_header "Testing Error Handling"
+
+expect_fail "Invalid algorithm rejected" \
+    "$SIMULATOR" --algorithm=INVALID --input="test/workload.txt"
+
+expect_fail "RR quantum=0 rejected" \
+    "$SIMULATOR" --algorithm=RR --quantum=0 --input="test/workload.txt"
+
+expect_fail "RR negative quantum rejected" \
+    "$SIMULATOR" --algorithm=RR --quantum=-5 --input="test/workload.txt"
+
+expect_fail "Missing workload source rejected" \
+    "$SIMULATOR" --algorithm=FCFS
+
+expect_fail "Invalid MLFQ config rejected" \
+    "$SIMULATOR" --algorithm=MLFQ --mlfq-config="test/mlfq_config_invalid_boost0.txt" --input="test/workload_short.txt"
 
 # Print summary
 print_header "Test Summary"
