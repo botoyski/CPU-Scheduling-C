@@ -2,15 +2,9 @@
 #define SCHEDULER_H
 
 #include "process.h"
+#include "metrics.h"
 
 #define MLFQ_MAX_LEVELS 8
-
-typedef struct {
-	double avg_turnaround;
-	double avg_waiting;
-	double avg_response;
-	int context_switches;
-} MetricsSummary;
 
 typedef struct {
 	int levels;
@@ -51,6 +45,5 @@ int schedule_rr(SchedulerState *state, int quantum);
 int schedule_mlfq(SchedulerState *state, MLFQConfig *config);
 
 void print_results(Process p[], int n);
-void compute_metrics_summary(Process p[], int n, MetricsSummary *summary);
 
 #endif

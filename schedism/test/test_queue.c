@@ -1,6 +1,6 @@
 #include <stdio.h>
 
-#include "queue.h"
+#include "../include/queue.h"
 
 static int test_init_invalid_capacity(void)
 {

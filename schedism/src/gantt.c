@@ -1,6 +1,8 @@
+#include <ctype.h>
+#include <stdio.h>
 #include <stdlib.h>
 
-#include "trace.h"
+#include "gantt.h"
 
 static ExecSegment *g_segments = NULL;
 static int g_count = 0;
@@ -155,4 +157,62 @@ void trace_set_quiet(int quiet)
 int trace_is_quiet(void)
 {
     return g_quiet;
+}
+
+static char pid_symbol(const Process *p)
+{
+    unsigned char c = (unsigned char)p->pid[0];
+    if (isalnum(c))
+        return (char)c;
+    return '#';
+}
+
+static void print_regular_markers(int total_time, int step)
+{
+    printf("Time markers (every %d):", step);
+    for (int t = 0; t <= total_time; t += step)
+        printf(" %d", t);
+    if (total_time % step != 0)
+        printf(" %d", total_time);
+    printf("\n");
+}
+
+void print_gantt(Process p[], int n)
+{
+    int total_time = trace_total_time();
+    if (total_time <= 0)
+        return;
+
+    (void)n;
+
+    printf("\n=== Gantt Chart (1 unit = 1 char) ===\n");
+    printf("CPU : ");
+    for (int t = 0; t < total_time; t++)
+    {
+        int idx = trace_pid_at_time(t);
+        if (idx < 0)
+            putchar('.');
+        else
+            putchar(pid_symbol(&p[idx]));
+    }
+    printf("\n");
+    print_regular_markers(total_time, 10);
+
+    if (total_time > 80)
+    {
+        const int scale = 10;
+        printf("\n=== Scaled Gantt Chart ===\n");
+        printf("Each char = %d time units\n", scale);
+        printf("CPU : ");
+        for (int t = 0; t < total_time; t += scale)
+        {
+            int idx = trace_pid_at_time(t);
+            if (idx < 0)
+                putchar('.');
+            else
+                putchar(pid_symbol(&p[idx]));
+        }
+        printf("\n");
+        print_regular_markers(total_time, 50);
+    }
 }

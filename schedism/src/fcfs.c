@@ -1,17 +1,16 @@
 #include <stdio.h>
-#include <limits.h>
 #include "scheduler.h"
-#include "trace.h"
+#include "gantt.h"
 
 /*
-Shortest Job First
+FCFS Scheduling
+First process that arrives gets CPU first
 Non-preemptive
-Select job with smallest burst time among arrived processes
 
-At each decision point, choose smallest burst among ready processes
+executes: arrival order → run until completion
 */
 
-int schedule_sjf(SchedulerState *state)
+int schedule_fcfs(SchedulerState *state)
 {
     Process *p = state->processes;
     int n = state->num_processes;
@@ -24,59 +23,62 @@ int schedule_sjf(SchedulerState *state)
 
     int completed = 0;
     int time = 0;
-
-    int visited[n];
+    int done[n];
 
     for (int i = 0; i < n; i++)
-        visited[i] = 0;
+        done[i] = 0;
 
     while (completed < n)
     {
         int idx = -1;
-        int min_burst = INT_MAX;
+        int min_arrival = 2147483647;
 
-        /* find shortest available job */
         for (int i = 0; i < n; i++)
         {
-            if (p[i].arrival_time <= time && !visited[i])
+            if (!done[i] && p[i].arrival_time <= time)
             {
-                if (p[i].burst_time < min_burst)
+                if (p[i].arrival_time < min_arrival)
                 {
-                    min_burst = p[i].burst_time;
+                    min_arrival = p[i].arrival_time;
                     idx = i;
                 }
             }
         }
 
-        /* if no job available */
         if (idx == -1)
         {
-            time++;
+            int next_arrival = 2147483647;
+            for (int i = 0; i < n; i++)
+            {
+                if (!done[i] && p[i].arrival_time < next_arrival)
+                    next_arrival = p[i].arrival_time;
+            }
+            time = next_arrival;
             continue;
         }
 
+        /* Process starts */
         p[idx].start_time = time;
-        int start = time;
+        p[idx].response_time = p[idx].start_time - p[idx].arrival_time;
+        p[idx].started = 1;
 
+        /* Execute full burst */
+        int start = time;
         time += p[idx].burst_time;
         if (!trace_add_segment_fn(idx, start, time))
         {
-            fprintf(stderr, "Error: memory allocation failed in SJF trace.\n");
+            fprintf(stderr, "Error: memory allocation failed in FCFS trace.\n");
             return -1;
         }
 
+        /* Process completes */
         p[idx].finish_time = time;
 
-        p[idx].turnaround_time =
-            p[idx].finish_time - p[idx].arrival_time;
+        /* Metrics */
+        p[idx].turnaround_time = p[idx].finish_time - p[idx].arrival_time;
+        p[idx].waiting_time = p[idx].turnaround_time - p[idx].burst_time;
 
-        p[idx].waiting_time =
-            p[idx].turnaround_time - p[idx].burst_time;
-
-        p[idx].response_time =
-            p[idx].start_time - p[idx].arrival_time;
-
-        visited[idx] = 1;
+        done[idx] = 1;
         completed++;
     }
 

@@ -23,4 +23,6 @@ typedef struct {
 
 } Process;
 
+void process_reset_all(Process p[], int n);
+
 #endif

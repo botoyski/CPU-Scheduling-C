@@ -2,8 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "process.h"
-#include "scheduler.h"
+#include "../include/process.h"
+#include "../include/scheduler.h"
 
 static int almost_equal(double a, double b)
 {
