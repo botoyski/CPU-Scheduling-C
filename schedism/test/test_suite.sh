@@ -147,8 +147,8 @@ done
 # Print summary
 print_header "Test Summary"
 TOTAL=$((TESTS_PASSED + TESTS_FAILED))
-echo "Tests passed: ${GREEN}$TESTS_PASSED${NC}"
-echo "Tests failed: ${RED}$TESTS_FAILED${NC}"
+echo -e "Tests passed: ${GREEN}$TESTS_PASSED${NC}"
+echo -e "Tests failed: ${RED}$TESTS_FAILED${NC}"
 echo "Total tests:  $TOTAL"
 
 if [ $TESTS_FAILED -eq 0 ]; then
