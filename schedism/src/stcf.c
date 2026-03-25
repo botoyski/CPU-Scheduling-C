@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <limits.h>
 #include "scheduler.h"
-#include "trace.h"
+#include "gantt.h"
 
 /*
 Shortest Time to Completion First

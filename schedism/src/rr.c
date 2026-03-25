@@ -2,7 +2,7 @@
 #include <stdlib.h>
 
 #include "scheduler.h"
-#include "trace.h"
+#include "gantt.h"
 #include "queue.h"
 
 int schedule_rr(SchedulerState *state, int quantum)

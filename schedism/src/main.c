@@ -3,9 +3,10 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "process.h"
-#include "scheduler.h"
-#include "trace.h"
+#include "../include/process.h"
+#include "../include/scheduler.h"
+#include "../include/utils.h"
+#include "gantt.h"
 
 typedef struct {
     char algorithm[16];
@@ -15,78 +16,6 @@ typedef struct {
     int quantum;
     int compare;
 } CliOptions;
-
-static int equals_ignore_case(const char *a, const char *b)
-{
-    while (*a && *b)
-    {
-        if (tolower((unsigned char)*a) != tolower((unsigned char)*b))
-            return 0;
-        a++;
-        b++;
-    }
-    return *a == '\0' && *b == '\0';
-}
-
-static void reset_processes(Process p[], int n)
-{
-    for (int i = 0; i < n; i++)
-    {
-        p[i].remaining_time = p[i].burst_time;
-        p[i].start_time = -1;
-        p[i].finish_time = -1;
-        p[i].response_time = -1;
-        p[i].turnaround_time = 0;
-        p[i].waiting_time = 0;
-        p[i].started = 0;
-        p[i].priority = 0;
-        p[i].time_in_queue = 0;
-    }
-}
-
-static int is_blank_or_comment(const char *line)
-{
-    /* Treat as comment only when the first non-space character is '#'. */
-    while (*line)
-    {
-        if (*line == '#')
-            return 1;
-        if (!isspace((unsigned char)*line))
-            return 0;
-        line++;
-    }
-    return 1;
-}
-
-static char *trim_spaces(char *s)
-{
-    while (*s && isspace((unsigned char)*s))
-        s++;
-
-    char *end = s + strlen(s);
-    while (end > s && isspace((unsigned char)end[-1]))
-        end--;
-    *end = '\0';
-
-    return s;
-}
-
-static int parse_int_strict(const char *s, int *out)
-{
-    if (s == NULL || *s == '\0')
-        return 0;
-
-    char *end = NULL;
-    long value = strtol(s, &end, 10);
-    if (end == s || *end != '\0')
-        return 0;
-
-    if (value < -2147483648L || value > 2147483647L)
-        return 0;
-
-    *out = (int)value;
-    return 1;
-}
 
 /*
 Inline workload format:
@@ -188,7 +117,7 @@ static int load_workload_inline(const char *spec, Process **out_processes, int *
         return 0;
     }
 
-    reset_processes(processes, count);
+    process_reset_all(processes, count);
     *out_processes = processes;
     *out_n = count;
     return 1;
@@ -262,7 +191,7 @@ static int load_workload(const char *path, Process **out_processes, int *out_n)
         return 0;
     }
 
-    reset_processes(processes, count);
+    process_reset_all(processes, count);
 
     *out_processes = processes;
     *out_n = count;
@@ -589,7 +518,7 @@ int main(int argc, char *argv[])
         MetricsSummary rows[5];
         trace_set_quiet(1);
 
-        reset_processes(processes, n);
+        process_reset_all(processes, n);
         state.current_time = 0;
         if (schedule_fcfs(&state) != 0)
         {
@@ -600,7 +529,7 @@ int main(int argc, char *argv[])
         }
         compute_metrics_summary(processes, n, &rows[0]);
 
-        reset_processes(processes, n);
+        process_reset_all(processes, n);
         state.current_time = 0;
         if (schedule_sjf(&state) != 0)
         {
@@ -611,7 +540,7 @@ int main(int argc, char *argv[])
         }
         compute_metrics_summary(processes, n, &rows[1]);
 
-        reset_processes(processes, n);
+        process_reset_all(processes, n);
         state.current_time = 0;
         if (schedule_stcf(&state) != 0)
         {
@@ -622,7 +551,7 @@ int main(int argc, char *argv[])
         }
         compute_metrics_summary(processes, n, &rows[2]);
 
-        reset_processes(processes, n);
+        process_reset_all(processes, n);
         state.current_time = 0;
         if (schedule_rr(&state, options.quantum) != 0)
         {
@@ -633,7 +562,7 @@ int main(int argc, char *argv[])
         }
         compute_metrics_summary(processes, n, &rows[3]);
 
-        reset_processes(processes, n);
+        process_reset_all(processes, n);
         state.current_time = 0;
         if (schedule_mlfq(&state, &config) != 0)
         {

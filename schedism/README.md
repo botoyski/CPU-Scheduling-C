@@ -3,6 +3,15 @@ CMSC 125 – Lab 2 Design Notes
 CPU scheduling in C, discrete-event simulator that demonstrates how operating systems make scheduling decisions to optimize system performance
 by Eryl Joseph Aspera and Luis Victor Borbolla
 
+## Build and Test (Current Workflow)
+Run all build and test commands from this directory.
+
+```bash
+make clean
+make
+make test-metrics
+make test-queue
+```
 
 # 1. Problem Analysis
 ## 1.1 Core Problem

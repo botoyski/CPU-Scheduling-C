@@ -2,7 +2,7 @@
 #include <stdlib.h>
 
 #include "scheduler.h"
-#include "trace.h"
+#include "gantt.h"
 #include "queue.h"
 
 static int highest_non_empty_queue(int levels, IntQueue queues[])
