@@ -46,6 +46,7 @@ static void reset_processes(Process p[], int n)
 
 static int is_blank_or_comment(const char *line)
 {
+    /* Treat as comment only when the first non-space character is '#'. */
     while (*line)
     {
         if (*line == '#')
@@ -291,10 +292,13 @@ static int parse_mlfq_config(const char *path, MLFQConfig *config)
         if (is_blank_or_comment(line))
             continue;
 
-        if (strncmp(line, "BOOST_PERIOD", 12) == 0)
+        char key[32];
+        int value;
+        char extra[32];
+        int parsed = sscanf(line, "%31s %d %31s", key, &value, extra);
+        if (parsed >= 1 && strcmp(key, "BOOST_PERIOD") == 0)
         {
-            int value;
-            if (sscanf(line, "BOOST_PERIOD %d", &value) != 1 || value <= 0)
+            if (parsed != 2 || value <= 0)
             {
                 fprintf(stderr, "Error: invalid BOOST_PERIOD entry: %s", line);
                 fclose(fp);
@@ -405,7 +409,8 @@ static void print_usage(const char *prog_name)
 
 static int parse_cli(int argc, char *argv[], CliOptions *options)
 {
-    strcpy(options->algorithm, "FCFS");
+    strncpy(options->algorithm, "FCFS", sizeof(options->algorithm) - 1);
+    options->algorithm[sizeof(options->algorithm) - 1] = '\0';
     options->input_path = NULL;
     options->inline_workload = NULL;
     options->mlfq_config_path = NULL;
@@ -416,7 +421,14 @@ static int parse_cli(int argc, char *argv[], CliOptions *options)
     {
         if (strncmp(argv[i], "--algorithm=", 12) == 0)
         {
-            strncpy(options->algorithm, argv[i] + 12, sizeof(options->algorithm) - 1);
+            const char *alg = argv[i] + 12;
+            if (strlen(alg) >= sizeof(options->algorithm))
+            {
+                fprintf(stderr, "Error: algorithm name too long: '%s'.\n", alg);
+                return 0;
+            }
+
+            strncpy(options->algorithm, alg, sizeof(options->algorithm) - 1);
             options->algorithm[sizeof(options->algorithm) - 1] = '\0';
         }
         else if (strncmp(argv[i], "--input=", 8) == 0)
