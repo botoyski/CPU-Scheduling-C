@@ -564,6 +564,10 @@ int main(int argc, char *argv[])
     state.processes = processes;
     state.num_processes = n;
     state.current_time = 0;
+    state.trace_reset_fn = trace_reset;
+    state.trace_add_segment_fn = trace_add_segment;
+    state.trace_set_context_switches_fn = trace_set_context_switches;
+    state.trace_is_quiet_fn = trace_is_quiet;
 
     if (options.compare)
     {
@@ -572,6 +576,7 @@ int main(int argc, char *argv[])
         {
             if (!parse_mlfq_config(options.mlfq_config_path, &config))
             {
+                trace_free();
                 free(processes);
                 return 1;
             }
@@ -589,6 +594,7 @@ int main(int argc, char *argv[])
         if (schedule_fcfs(&state) != 0)
         {
             trace_set_quiet(0);
+            trace_free();
             free(processes);
             return 1;
         }
@@ -599,6 +605,7 @@ int main(int argc, char *argv[])
         if (schedule_sjf(&state) != 0)
         {
             trace_set_quiet(0);
+            trace_free();
             free(processes);
             return 1;
         }
@@ -609,6 +616,7 @@ int main(int argc, char *argv[])
         if (schedule_stcf(&state) != 0)
         {
             trace_set_quiet(0);
+            trace_free();
             free(processes);
             return 1;
         }
@@ -619,6 +627,7 @@ int main(int argc, char *argv[])
         if (schedule_rr(&state, options.quantum) != 0)
         {
             trace_set_quiet(0);
+            trace_free();
             free(processes);
             return 1;
         }
@@ -629,6 +638,7 @@ int main(int argc, char *argv[])
         if (schedule_mlfq(&state, &config) != 0)
         {
             trace_set_quiet(0);
+            trace_free();
             free(processes);
             return 1;
         }
@@ -648,6 +658,7 @@ int main(int argc, char *argv[])
         printf("\nRunning FCFS\n");
         if (schedule_fcfs(&state) != 0)
         {
+            trace_free();
             free(processes);
             return 1;
         }
@@ -659,6 +670,7 @@ int main(int argc, char *argv[])
         printf("\nRunning SJF\n");
         if (schedule_sjf(&state) != 0)
         {
+            trace_free();
             free(processes);
             return 1;
         }
@@ -670,6 +682,7 @@ int main(int argc, char *argv[])
         printf("\nRunning STCF\n");
         if (schedule_stcf(&state) != 0)
         {
+            trace_free();
             free(processes);
             return 1;
         }
@@ -682,6 +695,7 @@ int main(int argc, char *argv[])
         printf("Using time quantum q=%d\n", options.quantum);
         if (schedule_rr(&state, options.quantum) != 0)
         {
+            trace_free();
             free(processes);
             return 1;
         }
@@ -693,6 +707,7 @@ int main(int argc, char *argv[])
         MLFQConfig config;
         if (!parse_mlfq_config(options.mlfq_config_path, &config))
         {
+            trace_free();
             free(processes);
             return 1;
         }
@@ -700,6 +715,7 @@ int main(int argc, char *argv[])
         printf("\nRunning MLFQ\n");
         if (schedule_mlfq(&state, &config) != 0)
         {
+            trace_free();
             free(processes);
             return 1;
         }

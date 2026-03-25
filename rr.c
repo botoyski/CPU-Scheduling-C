@@ -10,26 +10,32 @@ int schedule_rr(SchedulerState *state, int quantum)
     Process *p = state->processes;
     int n = state->num_processes;
 
-    trace_reset();
+    void (*trace_reset_fn)(void) = state->trace_reset_fn ? state->trace_reset_fn : trace_reset;
+    int (*trace_add_segment_fn)(int, int, int) = state->trace_add_segment_fn ? state->trace_add_segment_fn : trace_add_segment;
+    void (*trace_set_context_switches_fn)(int) = state->trace_set_context_switches_fn ? state->trace_set_context_switches_fn : trace_set_context_switches;
+
+    trace_reset_fn();
 
     int completed = 0;
     int time = 0;
     int context_switches = 0;
     int prev_pid = -1;
 
+    int result = -1;
     int *arrived = (int *)calloc((size_t)n, sizeof(int));
     if (arrived == NULL) {
         fprintf(stderr, "Error: memory allocation failed in RR scheduler.\n");
-        return -1;
+        goto cleanup;
     }
 
     IntQueue ready_queue;
+    int queue_initialized = 0;
     if (!queue_init(&ready_queue, n + 1))
     {
-        free(arrived);
         fprintf(stderr, "Error: memory allocation failed in RR scheduler.\n");
-        return -1;
+        goto cleanup;
     }
+    queue_initialized = 1;
 
     while (completed < n)
     {
@@ -39,9 +45,7 @@ int schedule_rr(SchedulerState *state, int quantum)
             {
                 if (!queue_push(&ready_queue, i)) {
                     fprintf(stderr, "Error: queue overflow in RR scheduler.\n");
-                    free(arrived);
-                    queue_free(&ready_queue);
-                    return -1;
+                    goto cleanup;
                 }
                 arrived[i] = 1;
             }
@@ -56,9 +60,7 @@ int schedule_rr(SchedulerState *state, int quantum)
         int idx;
         if (!queue_pop(&ready_queue, &idx)) {
             fprintf(stderr, "Error: queue underflow in RR scheduler.\n");
-            free(arrived);
-            queue_free(&ready_queue);
-            return -1;
+            goto cleanup;
         }
 
         if (prev_pid != -1 && prev_pid != idx)
@@ -88,9 +90,7 @@ int schedule_rr(SchedulerState *state, int quantum)
                 {
                     if (!queue_push(&ready_queue, i)) {
                         fprintf(stderr, "Error: queue overflow in RR scheduler.\n");
-                        free(arrived);
-                        queue_free(&ready_queue);
-                        return -1;
+                        goto cleanup;
                     }
                     arrived[i] = 1;
                 }
@@ -100,12 +100,10 @@ int schedule_rr(SchedulerState *state, int quantum)
                 break;
         }
 
-        if (!trace_add_segment(idx, segment_start, time))
+        if (!trace_add_segment_fn(idx, segment_start, time))
         {
             fprintf(stderr, "Error: memory allocation failed while recording RR Gantt chart.\n");
-            free(arrived);
-            queue_free(&ready_queue);
-            return -1;
+            goto cleanup;
         }
 
         if (p[idx].remaining_time == 0)
@@ -119,19 +117,20 @@ int schedule_rr(SchedulerState *state, int quantum)
         {
             if (!queue_push(&ready_queue, idx)) {
                 fprintf(stderr, "Error: queue overflow in RR scheduler.\n");
-                free(arrived);
-                queue_free(&ready_queue);
-                return -1;
+                goto cleanup;
             }
         }
 
         prev_pid = idx;
     }
 
-    trace_set_context_switches(context_switches);
+    trace_set_context_switches_fn(context_switches);
     state->current_time = time;
+    result = 0;
 
+cleanup:
     free(arrived);
-    queue_free(&ready_queue);
-    return 0;
+    if (queue_initialized)
+        queue_free(&ready_queue);
+    return result;
 }

@@ -16,7 +16,11 @@ int schedule_stcf(SchedulerState *state)
     Process *p = state->processes;
     int n = state->num_processes;
 
-    trace_reset();
+    void (*trace_reset_fn)(void) = state->trace_reset_fn ? state->trace_reset_fn : trace_reset;
+    int (*trace_add_segment_fn)(int, int, int) = state->trace_add_segment_fn ? state->trace_add_segment_fn : trace_add_segment;
+    void (*trace_set_context_switches_fn)(int) = state->trace_set_context_switches_fn ? state->trace_set_context_switches_fn : trace_set_context_switches;
+
+    trace_reset_fn();
 
     int time = 0;
     int completed = 0;
@@ -48,7 +52,7 @@ int schedule_stcf(SchedulerState *state)
         {
             if (current_pid != -1)
             {
-                if (!trace_add_segment(current_pid, segment_start, time))
+                if (!trace_add_segment_fn(current_pid, segment_start, time))
                 {
                     fprintf(stderr, "Error: memory allocation failed in STCF trace.\n");
                     return -1;
@@ -64,7 +68,7 @@ int schedule_stcf(SchedulerState *state)
         {
             if (current_pid != -1)
             {
-                if (!trace_add_segment(current_pid, segment_start, time))
+                if (!trace_add_segment_fn(current_pid, segment_start, time))
                 {
                     fprintf(stderr, "Error: memory allocation failed in STCF trace.\n");
                     return -1;
@@ -95,7 +99,7 @@ int schedule_stcf(SchedulerState *state)
         {
             completed++;
 
-            if (!trace_add_segment(idx, segment_start, time))
+            if (!trace_add_segment_fn(idx, segment_start, time))
             {
                 fprintf(stderr, "Error: memory allocation failed in STCF trace.\n");
                 return -1;
@@ -113,7 +117,7 @@ int schedule_stcf(SchedulerState *state)
         }
     }
 
-    trace_set_context_switches(context_switches);
+    trace_set_context_switches_fn(context_switches);
     state->current_time = time;
     return 0;
 }

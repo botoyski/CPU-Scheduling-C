@@ -15,7 +15,11 @@ int schedule_fcfs(SchedulerState *state)
     Process *p = state->processes;
     int n = state->num_processes;
 
-    trace_reset();
+    void (*trace_reset_fn)(void) = state->trace_reset_fn ? state->trace_reset_fn : trace_reset;
+    int (*trace_add_segment_fn)(int, int, int) = state->trace_add_segment_fn ? state->trace_add_segment_fn : trace_add_segment;
+    void (*trace_set_context_switches_fn)(int) = state->trace_set_context_switches_fn ? state->trace_set_context_switches_fn : trace_set_context_switches;
+
+    trace_reset_fn();
 
     int completed = 0;
     int time = 0;
@@ -61,7 +65,7 @@ int schedule_fcfs(SchedulerState *state)
         /* Execute full burst */
         int start = time;
         time += p[idx].burst_time;
-        if (!trace_add_segment(idx, start, time))
+        if (!trace_add_segment_fn(idx, start, time))
         {
             fprintf(stderr, "Error: memory allocation failed in FCFS trace.\n");
             return -1;
@@ -78,7 +82,7 @@ int schedule_fcfs(SchedulerState *state)
         completed++;
     }
 
-    trace_set_context_switches(0);
+    trace_set_context_switches_fn(0);
     state->current_time = time;
     return 0;
 }
