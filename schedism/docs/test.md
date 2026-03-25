@@ -101,3 +101,81 @@ If your Lab 1 shell supports process launching, test:
 - RR (quantum=50): < 2ms
 - MLFQ: < 2ms
 - Compare (all 5): < 10ms
+
+
+
+Run the existing automated suite first
+
+From project root:
+
+bash test/test_suite.sh
+
+This already covers:
+
+- queue unit tests
+
+- metrics unit tests
+
+- core functional runs for FCFS, SJF, STCF, RR, MLFQ
+
+## Process arrival testing (ready-queue timing)
+
+Create tiny workloads with known arrivals, then check first-run timing in output.
+
+Example command:
+
+```bash
+./schedsim --algorithm=FCFS --workload="P1,0,5;P2,2,3;P3,5,1"
+```
+
+What to verify:
+
+P1 starts at time 0
+
+P2 is not scheduled before time 2
+
+P3 is not scheduled before time 5
+
+Also test simultaneous arrival:
+
+```bash
+./schedsim --algorithm=FCFS --input=test/workload_simultaneous.txt
+```
+
+## Queue operations (enqueue/dequeue + FIFO + edge cases)
+
+Already in test/test_queue.c
+
+Run directly:
+
+make test-queue
+
+This validates:
+
+invalid init capacity
+
+FIFO push/pop behavior
+
+full/overflow
+
+underflow
+
+wraparound correctness
+
+## SJF/STCF sorting behavior
+
+Use a small crafted workload where shortest job should win.
+
+Example:
+
+```bash
+./schedsim --algorithm=SJF --workload="A,0,8;B,0,2;C,0,4"
+
+./schedsim --algorithm=STCF --workload="A,0,8;B,1,2;C,2,1"
+```
+
+Verify:
+
+SJF picks shortest among ready jobs
+
+STCF preempts when a shorter remaining-time process arrives
