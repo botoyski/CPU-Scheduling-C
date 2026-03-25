@@ -32,8 +32,8 @@ static void reset_processes(Process p[], int n)
     for (int i = 0; i < n; i++)
     {
         p[i].remaining_time = p[i].burst_time;
-        p[i].start_time = 0;
-        p[i].finish_time = 0;
+        p[i].start_time = -1;
+        p[i].finish_time = -1;
         p[i].response_time = 0;
         p[i].turnaround_time = 0;
         p[i].waiting_time = 0;
@@ -241,6 +241,12 @@ static int parse_mlfq_config(const char *path, MLFQConfig *config)
             fprintf(stderr, "Error: RR queue cannot appear below an FCFS queue in MLFQ levels.\n");
             return 0;
         }
+    }
+
+    if (config->boost_period <= 0)
+    {
+        fprintf(stderr, "Error: boost_period must be positive.\n");
+        return 0;
     }
 
     return 1;
@@ -459,6 +465,7 @@ int main(int argc, char *argv[])
         trace_set_quiet(0);
         print_compare_table(options.input_path, options.quantum, rows);
 
+        trace_free();
         free(processes);
         return 0;
     }
@@ -472,6 +479,7 @@ int main(int argc, char *argv[])
             return 1;
         }
         print_results(processes, n);
+        trace_free();
     }
     else if (equals_ignore_case(options.algorithm, "SJF"))
     {
@@ -482,6 +490,7 @@ int main(int argc, char *argv[])
             return 1;
         }
         print_results(processes, n);
+        trace_free();
     }
     else if (equals_ignore_case(options.algorithm, "STCF"))
     {
@@ -492,6 +501,7 @@ int main(int argc, char *argv[])
             return 1;
         }
         print_results(processes, n);
+        trace_free();
     }
     else if (equals_ignore_case(options.algorithm, "RR"))
     {
@@ -503,6 +513,7 @@ int main(int argc, char *argv[])
             return 1;
         }
         print_results(processes, n);
+        trace_free();
     }
     else if (equals_ignore_case(options.algorithm, "MLFQ"))
     {
@@ -520,6 +531,7 @@ int main(int argc, char *argv[])
             return 1;
         }
         print_results(processes, n);
+        trace_free();
     }
     else
     {

@@ -8,6 +8,7 @@ typedef struct {
 } ExecSegment;
 
 void trace_reset(void);
+void trace_free(void);
 int trace_add_segment(int pid_index, int start, int end);
 int trace_get_segment_count(void);
 const ExecSegment *trace_get_segments(void);

@@ -32,6 +32,15 @@ void trace_reset(void)
     g_context_switches = 0;
 }
 
+void trace_free(void)
+{
+    free(g_segments);
+    g_segments = NULL;
+    g_capacity = 0;
+    g_count = 0;
+    g_context_switches = 0;
+}
+
 int trace_add_segment(int pid_index, int start, int end)
 {
     if (start >= end)
