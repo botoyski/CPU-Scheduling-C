@@ -469,6 +469,14 @@ static int run_algorithm(SchedulerState *state, const char *alg, int quantum, ML
 
 static int run_single_algorithm(SchedulerState *state, const char *alg, int quantum, MLFQConfig *mlfq_config, Process *processes, int n)
 {
+    // Validate algorithm first
+    if (!equals_ignore_case(alg, "FCFS") && !equals_ignore_case(alg, "SJF") &&
+        !equals_ignore_case(alg, "STCF") && !equals_ignore_case(alg, "RR") &&
+        !equals_ignore_case(alg, "MLFQ")) {
+        fprintf(stderr, "Error: unknown algorithm '%s'.\n", alg);
+        return 0;
+    }
+    
     printf("\nRunning %s\n", alg);
     if (equals_ignore_case(alg, "RR")) printf("Using time quantum q=%d\n", quantum);
     
