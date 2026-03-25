@@ -65,21 +65,70 @@ static void print_gantt(Process p[], int n)
 
 void compute_metrics_summary(Process p[], int n, MetricsSummary *summary)
 {
+       if (summary == NULL)
+              return;
+
+       summary->avg_turnaround = 0.0;
+       summary->avg_waiting = 0.0;
+       summary->avg_response = 0.0;
+       summary->context_switches = trace_get_context_switches();
+
+       if (p == NULL || n <= 0)
+              return;
+
        double avg_turnaround = 0.0;
        double avg_wait = 0.0;
        double avg_response = 0.0;
+       int fallback_count = 0;
 
        for (int i = 0; i < n; i++)
        {
-              avg_turnaround += p[i].turnaround_time;
-              avg_wait += p[i].waiting_time;
-              avg_response += p[i].response_time;
+              int turnaround = p[i].turnaround_time;
+              if (turnaround < 0)
+              {
+                     if (p[i].finish_time >= p[i].arrival_time)
+                            turnaround = p[i].finish_time - p[i].arrival_time;
+                     else
+                     {
+                            turnaround = 0;
+                            fallback_count++;
+                     }
+              }
+
+              int waiting = p[i].waiting_time;
+              if (waiting < 0)
+              {
+                     waiting = turnaround - p[i].burst_time;
+                     if (waiting < 0)
+                     {
+                            waiting = 0;
+                            fallback_count++;
+                     }
+              }
+
+              int response = p[i].response_time;
+              if (response < 0)
+              {
+                     if (p[i].start_time >= p[i].arrival_time)
+                            response = p[i].start_time - p[i].arrival_time;
+                     else
+                     {
+                            response = 0;
+                            fallback_count++;
+                     }
+              }
+
+              avg_turnaround += turnaround;
+              avg_wait += waiting;
+              avg_response += response;
        }
 
        summary->avg_turnaround = avg_turnaround / n;
        summary->avg_waiting = avg_wait / n;
        summary->avg_response = avg_response / n;
-       summary->context_switches = trace_get_context_switches();
+
+       if (fallback_count > 0)
+              fprintf(stderr, "Warning: metrics summary used fallback values for %d fields.\n", fallback_count);
 }
 
 void print_results(Process p[], int n)

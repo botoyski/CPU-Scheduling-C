@@ -76,61 +76,96 @@ int main() {
             (const char *[]){"./schedsim", "--algorithm=FCFS", "--input=workload.txt", NULL},
             0, 1
         },
-        
+
         // Test 2: STCF via fork/exec
         {
             "Fork/Exec STCF with workload.txt",
             (const char *[]){"./schedsim", "--algorithm=STCF", "--input=workload.txt", NULL},
             0, 1
         },
-        
+
         // Test 3: RR with quantum via fork/exec
         {
             "Fork/Exec RR with quantum and workload.txt",
             (const char *[]){"./schedsim", "--algorithm=RR", "--quantum=50", "--input=workload.txt", NULL},
             0, 1
         },
-        
+
         // Test 4: MLFQ with config via fork/exec
         {
             "Fork/Exec MLFQ with config",
             (const char *[]){"./schedsim", "--algorithm=MLFQ", "--mlfq-config=mlfq_config.txt", "--input=workload.txt", NULL},
             0, 1
         },
-        
+
         // Test 5: Compare mode via fork/exec
         {
             "Fork/Exec Compare mode",
             (const char *[]){"./schedsim", "--compare", "--input=workload.txt", NULL},
             0, 1
         },
-        
+
         // Test 6: Error handling - missing input file
         {
             "Fork/Exec Error: Missing input file",
             (const char *[]){"./schedsim", "--algorithm=FCFS", "--input=nonexistent.txt", NULL},
             1, 1
         },
-        
+
         // Test 7: Error handling - invalid algorithm
         {
             "Fork/Exec Error: Invalid algorithm",
             (const char *[]){"./schedsim", "--algorithm=INVALID", "--input=workload.txt", NULL},
             1, 1
         },
-        
+
         // Test 8: Error handling - invalid quantum (0)
         {
             "Fork/Exec Error: RR quantum=0",
             (const char *[]){"./schedsim", "--algorithm=RR", "--quantum=0", "--input=workload.txt", NULL},
             1, 1
         },
-        
+
         // Test 9: Error handling - missing required flag
         {
             "Fork/Exec Error: Missing input file flag",
             (const char *[]){"./schedsim", "--algorithm=FCFS", NULL},
             1, 1
+        },
+
+        // Test 10: MLFQ with extremely small valid boost period
+        {
+            "Fork/Exec MLFQ tiny boost period",
+            (const char *[]){"./schedsim", "--algorithm=MLFQ", "--mlfq-config=mlfq_config_boost1.txt", "--input=workload_short.txt", NULL},
+            0, 1
+        },
+
+        // Test 11: MLFQ invalid boost period (0)
+        {
+            "Fork/Exec Error: MLFQ invalid boost period",
+            (const char *[]){"./schedsim", "--algorithm=MLFQ", "--mlfq-config=mlfq_config_invalid_boost0.txt", "--input=workload_short.txt", NULL},
+            1, 1
+        },
+
+        // Test 12: RR very small quantum
+        {
+            "Fork/Exec RR quantum=1",
+            (const char *[]){"./schedsim", "--algorithm=RR", "--quantum=1", "--input=workload_short.txt", NULL},
+            0, 1
+        },
+
+        // Test 13: RR invalid negative quantum
+        {
+            "Fork/Exec Error: RR quantum=-5",
+            (const char *[]){"./schedsim", "--algorithm=RR", "--quantum=-5", "--input=workload_short.txt", NULL},
+            1, 1
+        },
+
+        // Test 14: RR long workload stress path
+        {
+            "Fork/Exec RR with long workload",
+            (const char *[]){"./schedsim", "--algorithm=RR", "--quantum=7", "--input=workload_long.txt", NULL},
+            0, 1
         },
     };
     

@@ -10,6 +10,7 @@
 typedef struct {
     char algorithm[16];
     const char *input_path;
+    const char *inline_workload;
     const char *mlfq_config_path;
     int quantum;
     int compare;
@@ -32,9 +33,9 @@ static void reset_processes(Process p[], int n)
     for (int i = 0; i < n; i++)
     {
         p[i].remaining_time = p[i].burst_time;
-        p[i].start_time = 0;
-        p[i].finish_time = 0;
-        p[i].response_time = 0;
+        p[i].start_time = -1;
+        p[i].finish_time = -1;
+        p[i].response_time = -1;
         p[i].turnaround_time = 0;
         p[i].waiting_time = 0;
         p[i].started = 0;
@@ -45,6 +46,7 @@ static void reset_processes(Process p[], int n)
 
 static int is_blank_or_comment(const char *line)
 {
+    /* Treat as comment only when the first non-space character is '#'. */
     while (*line)
     {
         if (*line == '#')
@@ -53,6 +55,142 @@ static int is_blank_or_comment(const char *line)
             return 0;
         line++;
     }
+    return 1;
+}
+
+static char *trim_spaces(char *s)
+{
+    while (*s && isspace((unsigned char)*s))
+        s++;
+
+    char *end = s + strlen(s);
+    while (end > s && isspace((unsigned char)end[-1]))
+        end--;
+    *end = '\0';
+
+    return s;
+}
+
+static int parse_int_strict(const char *s, int *out)
+{
+    if (s == NULL || *s == '\0')
+        return 0;
+
+    char *end = NULL;
+    long value = strtol(s, &end, 10);
+    if (end == s || *end != '\0')
+        return 0;
+
+    if (value < -2147483648L || value > 2147483647L)
+        return 0;
+
+    *out = (int)value;
+    return 1;
+}
+
+/*
+Inline workload format:
+  --workload="P1,0,5;P2,1,3;P3,2,8"
+Each item is PID,ARRIVAL,BURST separated by ';'.
+*/
+static int load_workload_inline(const char *spec, Process **out_processes, int *out_n)
+{
+    if (spec == NULL || *spec == '\0')
+    {
+        fprintf(stderr, "Error: --workload must not be empty.\n");
+        return 0;
+    }
+
+    char *buf = (char *)malloc(strlen(spec) + 1);
+    if (buf == NULL)
+    {
+        fprintf(stderr, "Error: memory allocation failed.\n");
+        return 0;
+    }
+    strcpy(buf, spec);
+
+    int capacity = 16;
+    int count = 0;
+    Process *processes = (Process *)malloc((size_t)capacity * sizeof(Process));
+    if (processes == NULL)
+    {
+        fprintf(stderr, "Error: memory allocation failed.\n");
+        free(buf);
+        return 0;
+    }
+
+    char *saveptr = NULL;
+    char *entry = strtok_r(buf, ";", &saveptr);
+    while (entry != NULL)
+    {
+        char *item = trim_spaces(entry);
+        if (*item != '\0')
+        {
+            char *c1 = strchr(item, ',');
+            char *c2 = c1 ? strchr(c1 + 1, ',') : NULL;
+            char *c3 = c2 ? strchr(c2 + 1, ',') : NULL;
+
+            if (c1 == NULL || c2 == NULL || c3 != NULL)
+            {
+                fprintf(stderr, "Error: invalid --workload entry '%s'. Expected PID,ARRIVAL,BURST\n", item);
+                free(processes);
+                free(buf);
+                return 0;
+            }
+
+            *c1 = '\0';
+            *c2 = '\0';
+
+            char *pid = trim_spaces(item);
+            char *arrival_s = trim_spaces(c1 + 1);
+            char *burst_s = trim_spaces(c2 + 1);
+
+            int arrival_time;
+            int burst_time;
+            if (*pid == '\0' || !parse_int_strict(arrival_s, &arrival_time) || !parse_int_strict(burst_s, &burst_time))
+            {
+                fprintf(stderr, "Error: invalid --workload entry '%s'.\n", item);
+                free(processes);
+                free(buf);
+                return 0;
+            }
+
+            if (count == capacity)
+            {
+                capacity *= 2;
+                Process *resized = (Process *)realloc(processes, (size_t)capacity * sizeof(Process));
+                if (resized == NULL)
+                {
+                    fprintf(stderr, "Error: memory allocation failed.\n");
+                    free(processes);
+                    free(buf);
+                    return 0;
+                }
+                processes = resized;
+            }
+
+            strncpy(processes[count].pid, pid, sizeof(processes[count].pid) - 1);
+            processes[count].pid[sizeof(processes[count].pid) - 1] = '\0';
+            processes[count].arrival_time = arrival_time;
+            processes[count].burst_time = burst_time;
+            count++;
+        }
+
+        entry = strtok_r(NULL, ";", &saveptr);
+    }
+
+    free(buf);
+
+    if (count == 0)
+    {
+        fprintf(stderr, "Error: no processes found in --workload.\n");
+        free(processes);
+        return 0;
+    }
+
+    reset_processes(processes, count);
+    *out_processes = processes;
+    *out_n = count;
     return 1;
 }
 
@@ -154,10 +292,13 @@ static int parse_mlfq_config(const char *path, MLFQConfig *config)
         if (is_blank_or_comment(line))
             continue;
 
-        if (strncmp(line, "BOOST_PERIOD", 12) == 0)
+        char key[32];
+        int value;
+        char extra[32];
+        int parsed = sscanf(line, "%31s %d %31s", key, &value, extra);
+        if (parsed >= 1 && strcmp(key, "BOOST_PERIOD") == 0)
         {
-            int value;
-            if (sscanf(line, "BOOST_PERIOD %d", &value) != 1 || value <= 0)
+            if (parsed != 2 || value <= 0)
             {
                 fprintf(stderr, "Error: invalid BOOST_PERIOD entry: %s", line);
                 fclose(fp);
@@ -243,6 +384,12 @@ static int parse_mlfq_config(const char *path, MLFQConfig *config)
         }
     }
 
+    if (config->boost_period <= 0)
+    {
+        fprintf(stderr, "Error: boost_period must be positive.\n");
+        return 0;
+    }
+
     return 1;
 }
 
@@ -250,17 +397,22 @@ static void print_usage(const char *prog_name)
 {
     printf("Usage:\n");
     printf("  %s --algorithm=FCFS|SJF|STCF|RR|MLFQ --input=workload.txt [options]\n", prog_name);
+    printf("  %s --algorithm=FCFS|SJF|STCF|RR|MLFQ --workload=\"P1,0,5;P2,1,3\" [options]\n", prog_name);
     printf("  %s --compare --input=workload.txt [options]\n", prog_name);
+    printf("  %s --compare --workload=\"P1,0,5;P2,1,3\" [options]\n", prog_name);
     printf("\nOptions:\n");
     printf("  --quantum=<q>           Time quantum for RR (default: 30)\n");
     printf("  --mlfq-config=<file>    MLFQ config file path\n");
     printf("  --compare               Run all algorithms on the same workload\n");
+    printf("  --workload=<spec>       Inline workload: PID,ARRIVAL,BURST;...\n");
 }
 
 static int parse_cli(int argc, char *argv[], CliOptions *options)
 {
-    strcpy(options->algorithm, "FCFS");
+    strncpy(options->algorithm, "FCFS", sizeof(options->algorithm) - 1);
+    options->algorithm[sizeof(options->algorithm) - 1] = '\0';
     options->input_path = NULL;
+    options->inline_workload = NULL;
     options->mlfq_config_path = NULL;
     options->quantum = 30;
     options->compare = 0;
@@ -269,12 +421,23 @@ static int parse_cli(int argc, char *argv[], CliOptions *options)
     {
         if (strncmp(argv[i], "--algorithm=", 12) == 0)
         {
-            strncpy(options->algorithm, argv[i] + 12, sizeof(options->algorithm) - 1);
+            const char *alg = argv[i] + 12;
+            if (strlen(alg) >= sizeof(options->algorithm))
+            {
+                fprintf(stderr, "Error: algorithm name too long: '%s'.\n", alg);
+                return 0;
+            }
+
+            strncpy(options->algorithm, alg, sizeof(options->algorithm) - 1);
             options->algorithm[sizeof(options->algorithm) - 1] = '\0';
         }
         else if (strncmp(argv[i], "--input=", 8) == 0)
         {
             options->input_path = argv[i] + 8;
+        }
+        else if (strncmp(argv[i], "--workload=", 11) == 0)
+        {
+            options->inline_workload = argv[i] + 11;
         }
         else if (strncmp(argv[i], "--quantum=", 10) == 0)
         {
@@ -301,9 +464,16 @@ static int parse_cli(int argc, char *argv[], CliOptions *options)
         }
     }
 
-    if (options->input_path == NULL)
+    if (options->input_path == NULL && options->inline_workload == NULL)
     {
-        fprintf(stderr, "Error: --input is required.\n");
+        fprintf(stderr, "Error: provide either --input or --workload.\n");
+        print_usage(argv[0]);
+        return 0;
+    }
+
+    if (options->input_path != NULL && options->inline_workload != NULL)
+    {
+        fprintf(stderr, "Error: use only one workload source: --input or --workload.\n");
         print_usage(argv[0]);
         return 0;
     }
@@ -379,13 +549,25 @@ int main(int argc, char *argv[])
     Process *processes = NULL;
     int n = 0;
 
-    if (!load_workload(options.input_path, &processes, &n))
-        return 1;
+    if (options.input_path != NULL)
+    {
+        if (!load_workload(options.input_path, &processes, &n))
+            return 1;
+    }
+    else
+    {
+        if (!load_workload_inline(options.inline_workload, &processes, &n))
+            return 1;
+    }
 
     SchedulerState state;
     state.processes = processes;
     state.num_processes = n;
     state.current_time = 0;
+    state.trace_reset_fn = trace_reset;
+    state.trace_add_segment_fn = trace_add_segment;
+    state.trace_set_context_switches_fn = trace_set_context_switches;
+    state.trace_is_quiet_fn = trace_is_quiet;
 
     if (options.compare)
     {
@@ -394,6 +576,7 @@ int main(int argc, char *argv[])
         {
             if (!parse_mlfq_config(options.mlfq_config_path, &config))
             {
+                trace_free();
                 free(processes);
                 return 1;
             }
@@ -411,6 +594,7 @@ int main(int argc, char *argv[])
         if (schedule_fcfs(&state) != 0)
         {
             trace_set_quiet(0);
+            trace_free();
             free(processes);
             return 1;
         }
@@ -421,6 +605,7 @@ int main(int argc, char *argv[])
         if (schedule_sjf(&state) != 0)
         {
             trace_set_quiet(0);
+            trace_free();
             free(processes);
             return 1;
         }
@@ -431,6 +616,7 @@ int main(int argc, char *argv[])
         if (schedule_stcf(&state) != 0)
         {
             trace_set_quiet(0);
+            trace_free();
             free(processes);
             return 1;
         }
@@ -441,6 +627,7 @@ int main(int argc, char *argv[])
         if (schedule_rr(&state, options.quantum) != 0)
         {
             trace_set_quiet(0);
+            trace_free();
             free(processes);
             return 1;
         }
@@ -451,14 +638,17 @@ int main(int argc, char *argv[])
         if (schedule_mlfq(&state, &config) != 0)
         {
             trace_set_quiet(0);
+            trace_free();
             free(processes);
             return 1;
         }
         compute_metrics_summary(processes, n, &rows[4]);
 
         trace_set_quiet(0);
-        print_compare_table(options.input_path, options.quantum, rows);
+        const char *source = options.input_path != NULL ? options.input_path : "<inline-workload>";
+        print_compare_table(source, options.quantum, rows);
 
+        trace_free();
         free(processes);
         return 0;
     }
@@ -468,30 +658,36 @@ int main(int argc, char *argv[])
         printf("\nRunning FCFS\n");
         if (schedule_fcfs(&state) != 0)
         {
+            trace_free();
             free(processes);
             return 1;
         }
         print_results(processes, n);
+        trace_free();
     }
     else if (equals_ignore_case(options.algorithm, "SJF"))
     {
         printf("\nRunning SJF\n");
         if (schedule_sjf(&state) != 0)
         {
+            trace_free();
             free(processes);
             return 1;
         }
         print_results(processes, n);
+        trace_free();
     }
     else if (equals_ignore_case(options.algorithm, "STCF"))
     {
         printf("\nRunning STCF\n");
         if (schedule_stcf(&state) != 0)
         {
+            trace_free();
             free(processes);
             return 1;
         }
         print_results(processes, n);
+        trace_free();
     }
     else if (equals_ignore_case(options.algorithm, "RR"))
     {
@@ -499,16 +695,19 @@ int main(int argc, char *argv[])
         printf("Using time quantum q=%d\n", options.quantum);
         if (schedule_rr(&state, options.quantum) != 0)
         {
+            trace_free();
             free(processes);
             return 1;
         }
         print_results(processes, n);
+        trace_free();
     }
     else if (equals_ignore_case(options.algorithm, "MLFQ"))
     {
         MLFQConfig config;
         if (!parse_mlfq_config(options.mlfq_config_path, &config))
         {
+            trace_free();
             free(processes);
             return 1;
         }
@@ -516,14 +715,17 @@ int main(int argc, char *argv[])
         printf("\nRunning MLFQ\n");
         if (schedule_mlfq(&state, &config) != 0)
         {
+            trace_free();
             free(processes);
             return 1;
         }
         print_results(processes, n);
+        trace_free();
     }
     else
     {
         fprintf(stderr, "Error: unknown algorithm '%s'.\n", options.algorithm);
+        trace_free();
         free(processes);
         return 1;
     }
