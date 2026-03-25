@@ -15,7 +15,19 @@ static int highest_non_empty_queue(int levels, IntQueue queues[])
     return -1;
 }
 
-static void enqueue_new_arrivals(Process p[], int n, int time, int arrived[], IntQueue *q0)
+static void cleanup_mlfq_resources(IntQueue queues[], int levels, int *arrived, int *completed)
+{
+    if (queues != NULL)
+    {
+        for (int lvl = 0; lvl < levels; lvl++)
+            queue_free(&queues[lvl]);
+        free(queues);
+    }
+    free(arrived);
+    free(completed);
+}
+
+static int enqueue_new_arrivals(Process p[], int n, int time, int arrived[], IntQueue *q0)
 {
     for (int i = 0; i < n; i++)
     {
@@ -25,15 +37,17 @@ static void enqueue_new_arrivals(Process p[], int n, int time, int arrived[], In
             p[i].time_in_queue = 0;
             if (!queue_push(q0, i)) {
                 fprintf(stderr, "Error: queue overflow in enqueue_new_arrivals.\n");
+                return 0;
             }
             arrived[i] = 1;
             if (!trace_is_quiet())
                 printf("t=%d: Process %s enters Q0\n", p[i].arrival_time, p[i].pid);
         }
     }
+    return 1;
 }
 
-static void do_priority_boost(Process p[], int n, int completed[], int levels, IntQueue queues[], int time)
+static int do_priority_boost(Process p[], int n, int completed[], int levels, IntQueue queues[], int time)
 {
     for (int lvl = 1; lvl < levels; lvl++)
     {
@@ -42,7 +56,7 @@ static void do_priority_boost(Process p[], int n, int completed[], int levels, I
             int idx;
             if (!queue_pop(&queues[lvl], &idx)) {
                 fprintf(stderr, "Error: queue underflow in MLFQ boost.\n");
-                break;
+                return 0;
             }
             if (!completed[idx])
             {
@@ -50,6 +64,7 @@ static void do_priority_boost(Process p[], int n, int completed[], int levels, I
                 p[idx].time_in_queue = 0;
                 if (!queue_push(&queues[0], idx)) {
                     fprintf(stderr, "Error: queue overflow in MLFQ boost.\n");
+                    return 0;
                 }
             }
         }
@@ -62,7 +77,7 @@ static void do_priority_boost(Process p[], int n, int completed[], int levels, I
         int idx;
         if (!queue_pop(&queues[0], &idx)) {
             fprintf(stderr, "Error: queue underflow in MLFQ boost.\n");
-            // continue or something, but since size is checked, shouldn't happen
+            return 0;
         }
         if (!completed[idx])
         {
@@ -70,12 +85,15 @@ static void do_priority_boost(Process p[], int n, int completed[], int levels, I
             p[idx].time_in_queue = 0;
             if (!queue_push(&queues[0], idx)) {
                 fprintf(stderr, "Error: queue overflow in MLFQ boost.\n");
+                return 0;
             }
         }
     }
 
     if (!trace_is_quiet())
         printf("t=%d: Priority boost: all ready processes -> Q0\n", time);
+
+    return 1;
 }
 
 int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
@@ -97,9 +115,9 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
     if (arrived == NULL || completed == NULL || queues == NULL)
     {
         fprintf(stderr, "Error: memory allocation failed in MLFQ scheduler.\n");
+        free(queues);
         free(arrived);
         free(completed);
-        free(queues);
         return -1;
     }
 
@@ -108,11 +126,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
         if (!queue_init(&queues[lvl], n + 1))
         {
             fprintf(stderr, "Error: memory allocation failed in MLFQ queue setup.\n");
-            for (int i = 0; i < lvl; i++)
-                queue_free(&queues[i]);
-            free(arrived);
-            free(completed);
-            free(queues);
+            cleanup_mlfq_resources(queues, lvl, arrived, completed);
             return -1;
         }
     }
@@ -145,7 +159,11 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
 
     while (completed_count < n)
     {
-        enqueue_new_arrivals(p, n, time, arrived, &queues[0]);
+        if (!enqueue_new_arrivals(p, n, time, arrived, &queues[0]))
+        {
+            cleanup_mlfq_resources(queues, config->levels, arrived, completed);
+            return -1;
+        }
 
         int level = highest_non_empty_queue(config->levels, queues);
         if (level == -1)
@@ -153,7 +171,11 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
             time++;
             if (config->boost_period > 0 && time == next_boost)
             {
-                do_priority_boost(p, n, completed, config->levels, queues, time);
+                if (!do_priority_boost(p, n, completed, config->levels, queues, time))
+                {
+                    cleanup_mlfq_resources(queues, config->levels, arrived, completed);
+                    return -1;
+                }
                 next_boost += config->boost_period;
             }
             continue;
@@ -162,8 +184,8 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
         int idx;
         if (!queue_pop(&queues[level], &idx)) {
             fprintf(stderr, "Error: queue underflow in MLFQ main loop.\n");
-            // shouldn't happen
-            continue;
+            cleanup_mlfq_resources(queues, config->levels, arrived, completed);
+            return -1;
         }
         if (completed[idx])
             continue;
@@ -186,6 +208,8 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
                 p[idx].time_in_queue = 0;
                 if (!queue_push(&queues[level + 1], idx)) {
                     fprintf(stderr, "Error: queue overflow in MLFQ demotion.\n");
+                    cleanup_mlfq_resources(queues, config->levels, arrived, completed);
+                    return -1;
                 }
                   if (!trace_is_quiet())
                       printf("t=%d: Process %s -> Q%d (exhausted Q%d allotment)\n",
@@ -198,6 +222,8 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
             {
                 if (!queue_push(&queues[level], idx)) {
                     fprintf(stderr, "Error: queue overflow in MLFQ.\n");
+                    cleanup_mlfq_resources(queues, config->levels, arrived, completed);
+                    return -1;
                 }
             }
             prev_pid = idx;
@@ -235,7 +261,11 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
             p[idx].time_in_queue++;
             time++;
 
-            enqueue_new_arrivals(p, n, time, arrived, &queues[0]);
+            if (!enqueue_new_arrivals(p, n, time, arrived, &queues[0]))
+            {
+                cleanup_mlfq_resources(queues, config->levels, arrived, completed);
+                return -1;
+            }
 
             if (p[idx].remaining_time == 0)
                 break;
@@ -247,11 +277,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
         if (!trace_add_segment(idx, segment_start, time))
         {
             fprintf(stderr, "Error: memory allocation failed while recording MLFQ Gantt chart.\n");
-            for (int lvl = 0; lvl < config->levels; lvl++)
-                queue_free(&queues[lvl]);
-            free(arrived);
-            free(completed);
-            free(queues);
+            cleanup_mlfq_resources(queues, config->levels, arrived, completed);
             return -1;
         }
 
@@ -271,8 +297,14 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
             p[idx].time_in_queue = 0;
             if (!queue_push(&queues[0], idx)) {
                 fprintf(stderr, "Error: queue overflow in MLFQ boost.\n");
+                cleanup_mlfq_resources(queues, config->levels, arrived, completed);
+                return -1;
             }
-            do_priority_boost(p, n, completed, config->levels, queues, time);
+            if (!do_priority_boost(p, n, completed, config->levels, queues, time))
+            {
+                cleanup_mlfq_resources(queues, config->levels, arrived, completed);
+                return -1;
+            }
             next_boost += config->boost_period;
         }
         else
@@ -286,6 +318,8 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
                     p[idx].time_in_queue = 0;
                     if (!queue_push(&queues[level + 1], idx)) {
                         fprintf(stderr, "Error: queue overflow in MLFQ demotion.\n");
+                        cleanup_mlfq_resources(queues, config->levels, arrived, completed);
+                        return -1;
                     }
                     if (!trace_is_quiet())
                         printf("t=%d: Process %s -> Q%d (exhausted Q%d allotment)\n",
@@ -300,6 +334,8 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
             if (!demoted) {
                 if (!queue_push(&queues[level], idx)) {
                     fprintf(stderr, "Error: queue overflow in MLFQ.\n");
+                    cleanup_mlfq_resources(queues, config->levels, arrived, completed);
+                    return -1;
                 }
             }
         }
@@ -310,11 +346,6 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
     trace_set_context_switches(context_switches);
     state->current_time = time;
 
-    for (int lvl = 0; lvl < config->levels; lvl++)
-        queue_free(&queues[lvl]);
-
-    free(arrived);
-    free(completed);
-    free(queues);
+    cleanup_mlfq_resources(queues, config->levels, arrived, completed);
     return 0;
 }

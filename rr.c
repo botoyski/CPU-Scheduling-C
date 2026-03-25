@@ -86,7 +86,12 @@ int schedule_rr(SchedulerState *state, int quantum)
             {
                 if (!arrived[i] && p[i].arrival_time <= time)
                 {
-                    queue_push(&ready_queue, i);
+                    if (!queue_push(&ready_queue, i)) {
+                        fprintf(stderr, "Error: queue overflow in RR scheduler.\n");
+                        free(arrived);
+                        queue_free(&ready_queue);
+                        return -1;
+                    }
                     arrived[i] = 1;
                 }
             }
