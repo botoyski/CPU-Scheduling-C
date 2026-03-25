@@ -12,6 +12,7 @@ typedef struct {
     char algorithm[16];
     const char *input_path;
     const char *inline_workload;
+    const char *inline_processes;
     const char *mlfq_config_path;
     int quantum;
     int compare;
@@ -113,6 +114,112 @@ static int load_workload_inline(const char *spec, Process **out_processes, int *
     if (count == 0)
     {
         fprintf(stderr, "Error: no processes found in --workload.\n");
+        free(processes);
+        return 0;
+    }
+
+    process_reset_all(processes, count);
+    *out_processes = processes;
+    *out_n = count;
+    return 1;
+}
+
+/*
+Inline processes format:
+  --processes="P1:0:5,P2:1:3,P3:2:8"
+Each item is PID:ARRIVAL:BURST separated by ','.
+*/
+static int load_processes_inline(const char *spec, Process **out_processes, int *out_n)
+{
+    if (spec == NULL || *spec == '\0')
+    {
+        fprintf(stderr, "Error: --processes must not be empty.\n");
+        return 0;
+    }
+
+    char *buf = (char *)malloc(strlen(spec) + 1);
+    if (buf == NULL)
+    {
+        fprintf(stderr, "Error: memory allocation failed.\n");
+        return 0;
+    }
+    strcpy(buf, spec);
+
+    int capacity = 16;
+    int count = 0;
+    Process *processes = (Process *)malloc((size_t)capacity * sizeof(Process));
+    if (processes == NULL)
+    {
+        fprintf(stderr, "Error: memory allocation failed.\n");
+        free(buf);
+        return 0;
+    }
+
+    char *saveptr = NULL;
+    char *entry = strtok_r(buf, ",", &saveptr);
+    while (entry != NULL)
+    {
+        char *item = trim_spaces(entry);
+        if (*item != '\0')
+        {
+            char *c1 = strchr(item, ':');
+            char *c2 = c1 ? strchr(c1 + 1, ':') : NULL;
+            char *c3 = c2 ? strchr(c2 + 1, ':') : NULL;
+
+            if (c1 == NULL || c2 == NULL || c3 != NULL)
+            {
+                fprintf(stderr, "Error: invalid --processes entry '%s'. Expected PID:ARRIVAL:BURST\n", item);
+                free(processes);
+                free(buf);
+                return 0;
+            }
+
+            *c1 = '\0';
+            *c2 = '\0';
+
+            char *pid = trim_spaces(item);
+            char *arrival_s = trim_spaces(c1 + 1);
+            char *burst_s = trim_spaces(c2 + 1);
+
+            int arrival_time;
+            int burst_time;
+            if (*pid == '\0' || !parse_int_strict(arrival_s, &arrival_time) || !parse_int_strict(burst_s, &burst_time))
+            {
+                fprintf(stderr, "Error: invalid --processes entry '%s'.\n", item);
+                free(processes);
+                free(buf);
+                return 0;
+            }
+
+            if (count == capacity)
+            {
+                capacity *= 2;
+                Process *resized = (Process *)realloc(processes, (size_t)capacity * sizeof(Process));
+                if (resized == NULL)
+                {
+                    fprintf(stderr, "Error: memory allocation failed.\n");
+                    free(processes);
+                    free(buf);
+                    return 0;
+                }
+                processes = resized;
+            }
+
+            strncpy(processes[count].pid, pid, sizeof(processes[count].pid) - 1);
+            processes[count].pid[sizeof(processes[count].pid) - 1] = '\0';
+            processes[count].arrival_time = arrival_time;
+            processes[count].burst_time = burst_time;
+            count++;
+        }
+
+        entry = strtok_r(NULL, ",", &saveptr);
+    }
+
+    free(buf);
+
+    if (count == 0)
+    {
+        fprintf(stderr, "Error: no processes found in --processes.\n");
         free(processes);
         return 0;
     }
@@ -327,13 +434,16 @@ static void print_usage(const char *prog_name)
     printf("Usage:\n");
     printf("  %s --algorithm=FCFS|SJF|STCF|RR|MLFQ --input=workload.txt [options]\n", prog_name);
     printf("  %s --algorithm=FCFS|SJF|STCF|RR|MLFQ --workload=\"P1,0,5;P2,1,3\" [options]\n", prog_name);
+    printf("  %s --algorithm=FCFS|SJF|STCF|RR|MLFQ --processes=\"P1:0:5,P2:1:3\" [options]\n", prog_name);
     printf("  %s --compare --input=workload.txt [options]\n", prog_name);
     printf("  %s --compare --workload=\"P1,0,5;P2,1,3\" [options]\n", prog_name);
+    printf("  %s --compare --processes=\"P1:0:5,P2:1:3\" [options]\n", prog_name);
     printf("\nOptions:\n");
     printf("  --quantum=<q>           Time quantum for RR (default: 30)\n");
     printf("  --mlfq-config=<file>    MLFQ config file path\n");
     printf("  --compare               Run all algorithms on the same workload\n");
     printf("  --workload=<spec>       Inline workload: PID,ARRIVAL,BURST;...\n");
+    printf("  --processes=<spec>      Inline processes: PID:ARRIVAL:BURST,...\n");
 }
 
 static int parse_cli(int argc, char *argv[], CliOptions *options)
@@ -342,6 +452,7 @@ static int parse_cli(int argc, char *argv[], CliOptions *options)
     options->algorithm[sizeof(options->algorithm) - 1] = '\0';
     options->input_path = NULL;
     options->inline_workload = NULL;
+    options->inline_processes = NULL;
     options->mlfq_config_path = NULL;
     options->quantum = 30;
     options->compare = 0;
@@ -368,6 +479,10 @@ static int parse_cli(int argc, char *argv[], CliOptions *options)
         {
             options->inline_workload = argv[i] + 11;
         }
+        else if (strncmp(argv[i], "--processes=", 12) == 0)
+        {
+            options->inline_processes = argv[i] + 12;
+        }
         else if (strncmp(argv[i], "--quantum=", 10) == 0)
         {
             options->quantum = atoi(argv[i] + 10);
@@ -393,16 +508,24 @@ static int parse_cli(int argc, char *argv[], CliOptions *options)
         }
     }
 
-    if (options->input_path == NULL && options->inline_workload == NULL)
+    int sources = 0;
+    if (options->input_path != NULL)
+        sources++;
+    if (options->inline_workload != NULL)
+        sources++;
+    if (options->inline_processes != NULL)
+        sources++;
+
+    if (sources == 0)
     {
-        fprintf(stderr, "Error: provide either --input or --workload.\n");
+        fprintf(stderr, "Error: provide one workload source: --input, --workload, or --processes.\n");
         print_usage(argv[0]);
         return 0;
     }
 
-    if (options->input_path != NULL && options->inline_workload != NULL)
+    if (sources > 1)
     {
-        fprintf(stderr, "Error: use only one workload source: --input or --workload.\n");
+        fprintf(stderr, "Error: use only one workload source: --input, --workload, or --processes.\n");
         print_usage(argv[0]);
         return 0;
     }
@@ -481,6 +604,11 @@ int main(int argc, char *argv[])
     if (options.input_path != NULL)
     {
         if (!load_workload(options.input_path, &processes, &n))
+            return 1;
+    }
+    else if (options.inline_processes != NULL)
+    {
+        if (!load_processes_inline(options.inline_processes, &processes, &n))
             return 1;
     }
     else
