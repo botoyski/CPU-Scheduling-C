@@ -18,79 +18,64 @@ typedef struct {
     int compare;
 } CliOptions;
 
-/*
-Inline workload format:
-  --workload="P1,0,5;P2,1,3;P3,2,8"
-Each item is PID,ARRIVAL,BURST separated by ';'.
-*/
-static int load_workload_inline(const char *spec, Process **out_processes, int *out_n)
+/* Generic inline process parser supporting different delimiters */
+static int load_processes_inline_generic(const char *spec, const char *item_delim,
+                                         const char *field_delim, const char *option_name,
+                                         Process **out_processes, int *out_n)
 {
     if (spec == NULL || *spec == '\0')
     {
-        fprintf(stderr, "Error: --workload must not be empty.\n");
+        fprintf(stderr, "Error: --%s must not be empty.\n", option_name);
         return 0;
     }
 
     char *buf = (char *)malloc(strlen(spec) + 1);
-    if (buf == NULL)
-    {
+    if (buf == NULL) {
         fprintf(stderr, "Error: memory allocation failed.\n");
         return 0;
     }
     strcpy(buf, spec);
 
-    int capacity = 16;
-    int count = 0;
+    int capacity = 16, count = 0;
     Process *processes = (Process *)malloc((size_t)capacity * sizeof(Process));
-    if (processes == NULL)
-    {
+    if (processes == NULL) {
         fprintf(stderr, "Error: memory allocation failed.\n");
         free(buf);
         return 0;
     }
 
     char *saveptr = NULL;
-    char *entry = strtok_r(buf, ";", &saveptr);
-    while (entry != NULL)
-    {
+    char *entry = strtok_r(buf, item_delim, &saveptr);
+    while (entry != NULL) {
         char *item = trim_spaces(entry);
-        if (*item != '\0')
-        {
-            char *c1 = strchr(item, ',');
-            char *c2 = c1 ? strchr(c1 + 1, ',') : NULL;
-            char *c3 = c2 ? strchr(c2 + 1, ',') : NULL;
+        if (*item != '\0') {
+            char *c1 = strchr(item, *field_delim);
+            char *c2 = c1 ? strchr(c1 + 1, *field_delim) : NULL;
+            char *c3 = c2 ? strchr(c2 + 1, *field_delim) : NULL;
 
-            if (c1 == NULL || c2 == NULL || c3 != NULL)
-            {
-                fprintf(stderr, "Error: invalid --workload entry '%s'. Expected PID,ARRIVAL,BURST\n", item);
+            if (c1 == NULL || c2 == NULL || c3 != NULL) {
+                fprintf(stderr, "Error: invalid --%s entry '%s'. Expected PID%cARRIVAL%cBURST\n",
+                        option_name, item, *field_delim, *field_delim);
                 free(processes);
                 free(buf);
                 return 0;
             }
 
-            *c1 = '\0';
-            *c2 = '\0';
-
+            *c1 = *c2 = '\0';
             char *pid = trim_spaces(item);
-            char *arrival_s = trim_spaces(c1 + 1);
-            char *burst_s = trim_spaces(c2 + 1);
-
-            int arrival_time;
-            int burst_time;
-            if (*pid == '\0' || !parse_int_strict(arrival_s, &arrival_time) || !parse_int_strict(burst_s, &burst_time))
-            {
-                fprintf(stderr, "Error: invalid --workload entry '%s'.\n", item);
+            int arrival_time, burst_time;
+            if (*pid == '\0' || !parse_int_strict(trim_spaces(c1 + 1), &arrival_time) ||
+                !parse_int_strict(trim_spaces(c2 + 1), &burst_time)) {
+                fprintf(stderr, "Error: invalid --%s entry.\n", option_name);
                 free(processes);
                 free(buf);
                 return 0;
             }
 
-            if (count == capacity)
-            {
+            if (count == capacity) {
                 capacity *= 2;
                 Process *resized = (Process *)realloc(processes, (size_t)capacity * sizeof(Process));
-                if (resized == NULL)
-                {
+                if (resized == NULL) {
                     fprintf(stderr, "Error: memory allocation failed.\n");
                     free(processes);
                     free(buf);
@@ -105,15 +90,13 @@ static int load_workload_inline(const char *spec, Process **out_processes, int *
             processes[count].burst_time = burst_time;
             count++;
         }
-
-        entry = strtok_r(NULL, ";", &saveptr);
+        entry = strtok_r(NULL, item_delim, &saveptr);
     }
 
     free(buf);
 
-    if (count == 0)
-    {
-        fprintf(stderr, "Error: no processes found in --workload.\n");
+    if (count == 0) {
+        fprintf(stderr, "Error: no processes found in --%s.\n", option_name);
         free(processes);
         return 0;
     }
@@ -124,110 +107,14 @@ static int load_workload_inline(const char *spec, Process **out_processes, int *
     return 1;
 }
 
-/*
-Inline processes format:
-  --processes="P1:0:5,P2:1:3,P3:2:8"
-Each item is PID:ARRIVAL:BURST separated by ','.
-*/
+static int load_workload_inline(const char *spec, Process **out_processes, int *out_n)
+{
+    return load_processes_inline_generic(spec, ";", ",", "workload", out_processes, out_n);
+}
+
 static int load_processes_inline(const char *spec, Process **out_processes, int *out_n)
 {
-    if (spec == NULL || *spec == '\0')
-    {
-        fprintf(stderr, "Error: --processes must not be empty.\n");
-        return 0;
-    }
-
-    char *buf = (char *)malloc(strlen(spec) + 1);
-    if (buf == NULL)
-    {
-        fprintf(stderr, "Error: memory allocation failed.\n");
-        return 0;
-    }
-    strcpy(buf, spec);
-
-    int capacity = 16;
-    int count = 0;
-    Process *processes = (Process *)malloc((size_t)capacity * sizeof(Process));
-    if (processes == NULL)
-    {
-        fprintf(stderr, "Error: memory allocation failed.\n");
-        free(buf);
-        return 0;
-    }
-
-    char *saveptr = NULL;
-    char *entry = strtok_r(buf, ",", &saveptr);
-    while (entry != NULL)
-    {
-        char *item = trim_spaces(entry);
-        if (*item != '\0')
-        {
-            char *c1 = strchr(item, ':');
-            char *c2 = c1 ? strchr(c1 + 1, ':') : NULL;
-            char *c3 = c2 ? strchr(c2 + 1, ':') : NULL;
-
-            if (c1 == NULL || c2 == NULL || c3 != NULL)
-            {
-                fprintf(stderr, "Error: invalid --processes entry '%s'. Expected PID:ARRIVAL:BURST\n", item);
-                free(processes);
-                free(buf);
-                return 0;
-            }
-
-            *c1 = '\0';
-            *c2 = '\0';
-
-            char *pid = trim_spaces(item);
-            char *arrival_s = trim_spaces(c1 + 1);
-            char *burst_s = trim_spaces(c2 + 1);
-
-            int arrival_time;
-            int burst_time;
-            if (*pid == '\0' || !parse_int_strict(arrival_s, &arrival_time) || !parse_int_strict(burst_s, &burst_time))
-            {
-                fprintf(stderr, "Error: invalid --processes entry '%s'.\n", item);
-                free(processes);
-                free(buf);
-                return 0;
-            }
-
-            if (count == capacity)
-            {
-                capacity *= 2;
-                Process *resized = (Process *)realloc(processes, (size_t)capacity * sizeof(Process));
-                if (resized == NULL)
-                {
-                    fprintf(stderr, "Error: memory allocation failed.\n");
-                    free(processes);
-                    free(buf);
-                    return 0;
-                }
-                processes = resized;
-            }
-
-            strncpy(processes[count].pid, pid, sizeof(processes[count].pid) - 1);
-            processes[count].pid[sizeof(processes[count].pid) - 1] = '\0';
-            processes[count].arrival_time = arrival_time;
-            processes[count].burst_time = burst_time;
-            count++;
-        }
-
-        entry = strtok_r(NULL, ",", &saveptr);
-    }
-
-    free(buf);
-
-    if (count == 0)
-    {
-        fprintf(stderr, "Error: no processes found in --processes.\n");
-        free(processes);
-        return 0;
-    }
-
-    process_reset_all(processes, count);
-    *out_processes = processes;
-    *out_n = count;
-    return 1;
+    return load_processes_inline_generic(spec, ",", ":", "processes", out_processes, out_n);
 }
 
 static int load_workload(const char *path, Process **out_processes, int *out_n)
@@ -548,48 +435,47 @@ static int parse_cli(int argc, char *argv[], CliOptions *options)
 static void fill_default_mlfq_config(MLFQConfig *config)
 {
     config->levels = 3;
-    config->quantum[0] = 10;
-    config->allotment[0] = 50;
-    config->quantum[1] = 30;
-    config->allotment[1] = 150;
-    config->quantum[2] = -1;
-    config->allotment[2] = -1;
+    config->quantum[0] = 10;  config->allotment[0] = 50;
+    config->quantum[1] = 30;  config->allotment[1] = 150;
+    config->quantum[2] = -1;  config->allotment[2] = -1;
     config->boost_period = 200;
 }
 
-static void print_compare_table(const char *input_path,
-                                int rr_quantum,
-                                const MetricsSummary rows[5])
+static void print_compare_table(const char *input_path, int rr_quantum, const MetricsSummary rows[5])
 {
+    const char *names[] = {"FCFS", "SJF", "STCF", "RR", "MLFQ"};
     printf("\n=== Algorithm Comparison for %s ===\n\n", input_path);
     printf("Algorithm | Avg TT | Avg WT | Avg RT | Context Switches\n");
     printf("----------|--------|--------|--------|------------------\n");
-    printf("FCFS      | %6.1f | %6.1f | %6.1f | %16d\n",
-           rows[0].avg_turnaround,
-           rows[0].avg_waiting,
-           rows[0].avg_response,
-           rows[0].context_switches);
-    printf("SJF       | %6.1f | %6.1f | %6.1f | %16d\n",
-           rows[1].avg_turnaround,
-           rows[1].avg_waiting,
-           rows[1].avg_response,
-           rows[1].context_switches);
-    printf("STCF      | %6.1f | %6.1f | %6.1f | %16d\n",
-           rows[2].avg_turnaround,
-           rows[2].avg_waiting,
-           rows[2].avg_response,
-           rows[2].context_switches);
-    printf("RR (q=%d) | %6.1f | %6.1f | %6.1f | %16d\n",
-           rr_quantum,
-           rows[3].avg_turnaround,
-           rows[3].avg_waiting,
-           rows[3].avg_response,
-           rows[3].context_switches);
-    printf("MLFQ      | %6.1f | %6.1f | %6.1f | %16d\n",
-           rows[4].avg_turnaround,
-           rows[4].avg_waiting,
-           rows[4].avg_response,
-           rows[4].context_switches);
+    for (int i = 0; i < 5; i++) {
+        if (i == 3)
+            printf("%s (q=%d) | %6.1f | %6.1f | %6.1f | %16d\n", names[i], rr_quantum,
+                   rows[i].avg_turnaround, rows[i].avg_waiting, rows[i].avg_response, rows[i].context_switches);
+        else
+            printf("%-9s | %6.1f | %6.1f | %6.1f | %16d\n", names[i],
+                   rows[i].avg_turnaround, rows[i].avg_waiting, rows[i].avg_response, rows[i].context_switches);
+    }
+}
+
+static int run_algorithm(SchedulerState *state, const char *alg, int quantum, MLFQConfig *mlfq_config)
+{
+    if (equals_ignore_case(alg, "FCFS")) return schedule_fcfs(state);
+    if (equals_ignore_case(alg, "SJF")) return schedule_sjf(state);
+    if (equals_ignore_case(alg, "STCF")) return schedule_stcf(state);
+    if (equals_ignore_case(alg, "RR")) return schedule_rr(state, quantum);
+    if (equals_ignore_case(alg, "MLFQ")) return schedule_mlfq(state, mlfq_config);
+    return 1;
+}
+
+static int run_single_algorithm(SchedulerState *state, const char *alg, int quantum, MLFQConfig *mlfq_config, Process *processes, int n)
+{
+    printf("\nRunning %s\n", alg);
+    if (equals_ignore_case(alg, "RR")) printf("Using time quantum q=%d\n", quantum);
+    
+    if (run_algorithm(state, alg, quantum, mlfq_config) != 0) return 0;
+    print_results(processes, n);
+    trace_free();
+    return 1;
 }
 
 int main(int argc, char *argv[])
@@ -626,165 +512,44 @@ int main(int argc, char *argv[])
     state.trace_set_context_switches_fn = trace_set_context_switches;
     state.trace_is_quiet_fn = trace_is_quiet;
 
-    if (options.compare)
-    {
-        MLFQConfig config;
-        if (options.mlfq_config_path != NULL)
-        {
-            if (!parse_mlfq_config(options.mlfq_config_path, &config))
-            {
+    MLFQConfig mlfq_config;
+    if (options.mlfq_config_path != NULL) {
+        if (!parse_mlfq_config(options.mlfq_config_path, &mlfq_config)) {
+            trace_free();
+            free(processes);
+            return 1;
+        }
+    } else {
+        fill_default_mlfq_config(&mlfq_config);
+    }
+
+    if (options.compare) {
+        MetricsSummary rows[5];
+        const char *algs[] = {"FCFS", "SJF", "STCF", "RR", "MLFQ"};
+        trace_set_quiet(1);
+
+        for (int i = 0; i < 5; i++) {
+            process_reset_all(processes, n);
+            state.current_time = 0;
+            if (run_algorithm(&state, algs[i], options.quantum, &mlfq_config) != 0) {
+                trace_set_quiet(0);
                 trace_free();
                 free(processes);
                 return 1;
             }
+            compute_metrics_summary(processes, n, &rows[i]);
         }
-        else
-        {
-            fill_default_mlfq_config(&config);
-        }
-
-        MetricsSummary rows[5];
-        trace_set_quiet(1);
-
-        process_reset_all(processes, n);
-        state.current_time = 0;
-        if (schedule_fcfs(&state) != 0)
-        {
-            trace_set_quiet(0);
-            trace_free();
-            free(processes);
-            return 1;
-        }
-        compute_metrics_summary(processes, n, &rows[0]);
-
-        process_reset_all(processes, n);
-        state.current_time = 0;
-        if (schedule_sjf(&state) != 0)
-        {
-            trace_set_quiet(0);
-            trace_free();
-            free(processes);
-            return 1;
-        }
-        compute_metrics_summary(processes, n, &rows[1]);
-
-        process_reset_all(processes, n);
-        state.current_time = 0;
-        if (schedule_stcf(&state) != 0)
-        {
-            trace_set_quiet(0);
-            trace_free();
-            free(processes);
-            return 1;
-        }
-        compute_metrics_summary(processes, n, &rows[2]);
-
-        process_reset_all(processes, n);
-        state.current_time = 0;
-        if (schedule_rr(&state, options.quantum) != 0)
-        {
-            trace_set_quiet(0);
-            trace_free();
-            free(processes);
-            return 1;
-        }
-        compute_metrics_summary(processes, n, &rows[3]);
-
-        process_reset_all(processes, n);
-        state.current_time = 0;
-        if (schedule_mlfq(&state, &config) != 0)
-        {
-            trace_set_quiet(0);
-            trace_free();
-            free(processes);
-            return 1;
-        }
-        compute_metrics_summary(processes, n, &rows[4]);
 
         trace_set_quiet(0);
         const char *source = options.input_path != NULL ? options.input_path : "<inline-workload>";
         print_compare_table(source, options.quantum, rows);
-
         trace_free();
-        free(processes);
-        return 0;
-    }
-
-    if (equals_ignore_case(options.algorithm, "FCFS"))
-    {
-        printf("\nRunning FCFS\n");
-        if (schedule_fcfs(&state) != 0)
-        {
+    } else {
+        if (!run_single_algorithm(&state, options.algorithm, options.quantum, &mlfq_config, processes, n)) {
             trace_free();
             free(processes);
             return 1;
         }
-        print_results(processes, n);
-        trace_free();
-    }
-    else if (equals_ignore_case(options.algorithm, "SJF"))
-    {
-        printf("\nRunning SJF\n");
-        if (schedule_sjf(&state) != 0)
-        {
-            trace_free();
-            free(processes);
-            return 1;
-        }
-        print_results(processes, n);
-        trace_free();
-    }
-    else if (equals_ignore_case(options.algorithm, "STCF"))
-    {
-        printf("\nRunning STCF\n");
-        if (schedule_stcf(&state) != 0)
-        {
-            trace_free();
-            free(processes);
-            return 1;
-        }
-        print_results(processes, n);
-        trace_free();
-    }
-    else if (equals_ignore_case(options.algorithm, "RR"))
-    {
-        printf("\nRunning RR\n");
-        printf("Using time quantum q=%d\n", options.quantum);
-        if (schedule_rr(&state, options.quantum) != 0)
-        {
-            trace_free();
-            free(processes);
-            return 1;
-        }
-        print_results(processes, n);
-        trace_free();
-    }
-    else if (equals_ignore_case(options.algorithm, "MLFQ"))
-    {
-        MLFQConfig config;
-        if (!parse_mlfq_config(options.mlfq_config_path, &config))
-        {
-            trace_free();
-            free(processes);
-            return 1;
-        }
-
-        printf("\nRunning MLFQ\n");
-        if (schedule_mlfq(&state, &config) != 0)
-        {
-            trace_free();
-            free(processes);
-            return 1;
-        }
-        print_results(processes, n);
-        trace_free();
-    }
-    else
-    {
-        fprintf(stderr, "Error: unknown algorithm '%s'.\n", options.algorithm);
-        trace_free();
-        free(processes);
-        return 1;
     }
 
     free(processes);
