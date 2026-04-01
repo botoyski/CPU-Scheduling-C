@@ -9,7 +9,7 @@
 ./schedsim --algorithm=SJF --input=workload.txt
 ./schedsim --algorithm=STCF --input=workload.txt
 ./schedsim --algorithm=RR --quantum=50 --input=workload.txt
-./schedsim --algorithm=MLFQ --mlfq-config=mlfq_config.txt --input=workload.txt
+./schedsim --algorithm=MLFQ --mlfq-config=test/mlfq_config.txt --input=test/workload.txt
 ```
 
 **Expected:** All exit with code 0 and display per-process metrics + Gantt chart
@@ -55,7 +55,7 @@ The test harness validates your simulator as a child process spawned via fork() 
 
 ```bash
 /mnt/c/Users/Botoy/Desktop/3rd\ Year/CMSC\ 125/mysh/CMSC-125-lab1/mysh
-mysh> ./schedsim --algorithm=FCFS --input=workload.txt
+mysh> ./schedsim --algorithm=FCFS --input=test/workload.txt
 ```
 
 ### Standalone ###
@@ -179,3 +179,7 @@ Verify:
 SJF picks shortest among ready jobs
 
 STCF preempts when a shorter remaining-time process arrives
+
+```bash
+./schedsim --algorithm=STCF --workload="A,0,240;B,10,180;C,20,150;D,25,80;E,30,130
+```
