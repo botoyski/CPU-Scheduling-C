@@ -8,7 +8,7 @@
 ./schedsim --algorithm=FCFS --input=workload.txt
 ./schedsim --algorithm=SJF --input=workload.txt
 ./schedsim --algorithm=STCF --input=workload.txt
-./schedsim --algorithm=RR --quantum=50 --input=workload.txt
+./schedsim --algorithm=RR --quantum=50 --input=test/workload.txt
 ./schedsim --algorithm=MLFQ --mlfq-config=mlfq_config.txt --input=workload.txt
 ```
 

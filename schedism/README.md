@@ -13,6 +13,70 @@ make test-metrics
 make test-queue
 ```
 
+## CLI Quick Reference
+
+```bash
+# Single algorithm with workload file
+./schedsim --algorithm=RR --quantum=30 --input=test/workload.txt
+
+# Verbose process logging
+./schedsim --algorithm=RR --quantum=30 --input=test/workload.txt --verbose
+
+# Compare all algorithms on one workload
+./schedsim --compare --input=test/workload.txt
+
+# MLFQ with explicit config
+./schedsim --algorithm=MLFQ --mlfq-config=test/mlfq_config.txt --input=test/workload.txt
+```
+
+Supported options:
+* `--algorithm=FCFS|SJF|STCF|RR|MLFQ`
+* `--input=<file>`
+* `--workload="PID,ARRIVAL,BURST;..."`
+* `--processes="PID:ARRIVAL:BURST,..."`
+* `--quantum=<q>` (RR)
+* `--mlfq-config=<file>` (MLFQ)
+* `--compare`
+* `--verbose`
+
+### Expected Output (Examples)
+
+Example 1: RR with verbose logs
+
+```bash
+./schedsim --algorithm=RR --quantum=30 --input=test/workload.txt --verbose | head -n 12
+```
+
+Expected pattern in output:
+* Starts with `Running RR` and `Using time quantum q=30`
+* Shows process-level events such as:
+    * `Process A arrives and joins RR queue`
+    * `Process A runs for up to 30 units`
+    * `Process A re-queued (...)`
+
+Example 2: MLFQ without verbose
+
+```bash
+./schedsim --algorithm=MLFQ --mlfq-config=test/mlfq_config.txt --input=test/workload.txt
+```
+
+Expected pattern in output:
+* Starts with `Running MLFQ`
+* Prints `=== Per-Process Metrics ===`
+* Prints `=== Averages ===`
+* Prints Gantt chart / execution summary
+
+Example 3: Compare mode
+
+```bash
+./schedsim --compare --input=test/workload.txt
+```
+
+Expected pattern in output:
+* Prints `=== Algorithm Comparison for ... ===`
+* Includes rows for `FCFS`, `SJF`, `STCF`, `RR`, and `MLFQ`
+* Shows Avg TT, Avg WT, Avg RT, and context switches
+
 # 1. Problem Analysis
 ## 1.1 Core Problem
 Modern operating systems must decide:
@@ -57,30 +121,19 @@ The simulator must:
 
 # 3. High-Level Architecture
 
-                +---------------------+
-                |     main.c          |
-                | CLI + argument parse|
-                +----------+----------+
-                           |
-                           v
-                +---------------------+
-                | SchedulerState      |
-                | - processes         |
-                | - current_time      |
-                | - gantt buffer      |
-                +----------+----------+
-                           |
-        +------------------+------------------+
-        |         |         |         |        |
-        v         v         v         v        v
-      FCFS      SJF       STCF       RR      MLFQ
-        |         |         |         |        |
-        +-----------> Simulation Engine <------+
-                           |
-                           v
-                +---------------------+
-                | Metrics + Gantt     |
-                +---------------------+
+The current codebase is split by responsibility:
+
+* `src/main.c`: top-level orchestration only (load config, dispatch run mode, cleanup)
+* `src/cli.c` + `include/cli.h`: CLI parsing, usage output, workload source loading
+* `src/scheduler.c`: shared scheduler utilities (algorithm dispatch, compare mode, MLFQ config parsing, common helper logic)
+* `src/fcfs.c`, `src/sjf.c`, `src/stcf.c`, `src/rr.c`, `src/mlfq.c`: algorithm-specific scheduling policy
+* `src/metrics.c`: summary/per-process metric reporting
+* `src/gantt.c`: execution trace storage and Gantt rendering
+* `src/queue.c`: queue utilities used by RR/MLFQ
+
+Flow summary:
+
+`main.c` -> `cli.c` (options + workload) -> `scheduler.c` (dispatch/run mode) -> selected algorithm module -> `metrics.c` + `gantt.c`
 
 # 4. Core Design Decisions
 ## 4.1 Discrete-Time Simulation
@@ -148,12 +201,11 @@ Long job A blocks all others.
 
 # 5.2 SJF (Shortest Job First)
 ### Type: Non-preemptive
-### Data Structure: Min-Heap (better than sorting every time)
+### Data Structure: Linear ready-process scan per decision point
 
-Why heap?
-* O(log n) insertion
-* O(log n) extraction
-* Efficient for dynamic arrivals
+Current implementation detail:
+* At each scheduling decision, SJF scans all arrived-but-unfinished processes
+* Chooses the minimum burst time among ready processes
 
 ### Strength:
 * Optimal average turnaround (non-preemptive)
@@ -165,12 +217,11 @@ Why heap?
 # 5.3 STCF (Shortest Time to Completion First)
 ### Type: Preemptive SJF
 ### Key Rule:
-If new process has shorter remaining time:
-→ Preempt immediately.
+If a ready process has shorter remaining time, preempt.
 
 ### Implementation:
-* Min-heap ordered by remaining_time
-* Check at every arrival
+* Tick-by-tick linear scan across ready processes
+* Select minimum remaining time each tick
 
 ### Strength:
 * Provably optimal average turnaround
@@ -270,16 +321,14 @@ Response:   0 - 0 = 0
 We compute per-process and averages.
 
 # 7. Gantt Chart Design
-Each time unit:
-gantt[t] = current_process_pid
+Execution is stored as contiguous trace segments (`pid_index`, `start`, `end`).
 
-For large workloads:
-* 1 char = 10 time units
-* Scale output
+Rendered output includes:
+* Grid-style time slices for readability
+* Execution summary by segment
+* Context-switch count in the metrics summary
 
-Example:
-[A---------][B------][C----]
-Time: 0    240     420    570
+Verbose mode (`--verbose`) is separate from Gantt rendering and prints process-level scheduling events during simulation.
 
 # 8. Comparative Analysis Mode
 When using:
@@ -330,6 +379,19 @@ We tested:
 * Bimodal workload
 
 Results matched expected lecture averages.
+
+# 12.1 Known Limitations and Assumptions
+
+Assumptions:
+* CPU-bound single-core model (one process runs at a time)
+* Deterministic discrete-time simulation (time advances in integer ticks)
+* No I/O blocking model; workloads only include arrival and CPU burst
+
+Current limitations:
+* Input validation focuses on format correctness; semantic edge policies (for example duplicate PID names) are not deeply enforced
+* SJF and STCF use linear scans per decision/tick instead of heap-based ready structures
+* Gantt rendering is text-based (terminal output), not graphical
+* Context switch overhead is counted, but switch time cost is not added to execution time
 
 # 13. Final Design Philosophy
 This simulator demonstrates:
