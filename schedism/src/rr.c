@@ -19,6 +19,7 @@ int schedule_rr(SchedulerState *state, int quantum)
 {
     Process *p = state->processes;
     int n = state->num_processes;
+    int verbose = state->verbose;
 
     void (*trace_reset_fn)(void) = state->trace_reset_fn ? state->trace_reset_fn : trace_reset;
     int (*trace_add_segment_fn)(int, int, int) = state->trace_add_segment_fn ? state->trace_add_segment_fn : trace_add_segment;
@@ -66,6 +67,8 @@ int schedule_rr(SchedulerState *state, int quantum)
                     goto cleanup;
                 }
                 arrived[i] = 1;
+                if (verbose)
+                    printf("t=%d: Process %s arrives and joins RR queue\n", time, p[i].pid);
             }
         }
 
@@ -102,6 +105,8 @@ int schedule_rr(SchedulerState *state, int quantum)
 
         // record execution segment for Gantt chart
         int segment_start = time;
+        if (verbose)
+            printf("t=%d: Process %s runs for up to %d units\n", time, p[idx].pid, run_for);
 
         // run process for its time quantum (or until completion)
         for (int tick = 0; tick < run_for; tick++)
@@ -128,6 +133,8 @@ int schedule_rr(SchedulerState *state, int quantum)
             p[idx].finish_time = time;
             p[idx].turnaround_time = p[idx].finish_time - p[idx].arrival_time;
             p[idx].waiting_time = p[idx].turnaround_time - p[idx].burst_time;
+            if (verbose)
+                printf("t=%d: Process %s completes\n", time, p[idx].pid);
         }
         // if not completed, add back to ready queue
         else
@@ -137,6 +144,8 @@ int schedule_rr(SchedulerState *state, int quantum)
                 fprintf(stderr, "Error: queue overflow in RR scheduler.\n");
                 goto cleanup;
             }
+            if (verbose)
+                printf("t=%d: Process %s re-queued (remaining=%d)\n", time, p[idx].pid, p[idx].remaining_time);
         }
 
         prev_pid = idx;

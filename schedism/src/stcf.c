@@ -17,6 +17,7 @@ int schedule_stcf(SchedulerState *state)
     // extract processes, number of processes, and tracing functions from the scheduler state. We will use the provided tracing functions if available, otherwise default to the ones from gantt.h.
     Process *p = state->processes;
     int n = state->num_processes;
+    int verbose = state->verbose;
 
     // use provided trace functions if available, otherwise default to gantt implementations
     void (*trace_reset_fn)(void) = state->trace_reset_fn ? state->trace_reset_fn : trace_reset;
@@ -92,6 +93,8 @@ int schedule_stcf(SchedulerState *state)
             }
             current_pid = idx;
             segment_start = time;
+            if (verbose)
+                printf("t=%d: Process %s selected (STCF, remaining=%d)\n", time, p[idx].pid, p[idx].remaining_time);
         }
 
         // if this is the first time the selected process is scheduled, we will record its start time and response time based on the current time and its arrival time. We will also set its started flag to indicate that it has started execution.
@@ -132,6 +135,8 @@ int schedule_stcf(SchedulerState *state)
 
             p[idx].waiting_time =
                 p[idx].turnaround_time - p[idx].burst_time;
+            if (verbose)
+                printf("t=%d: Process %s completes\n", time, p[idx].pid);
         }
     }
 

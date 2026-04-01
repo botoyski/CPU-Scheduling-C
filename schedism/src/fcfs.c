@@ -15,6 +15,7 @@ int schedule_fcfs(SchedulerState *state)
 {
     Process *p = state->processes;
     int n = state->num_processes;
+    int verbose = state->verbose;
 
     // use provided trace functions if available, otherwise default to gantt implementations
     void (*trace_reset_fn)(void) = state->trace_reset_fn ? state->trace_reset_fn : trace_reset;
@@ -71,6 +72,8 @@ int schedule_fcfs(SchedulerState *state)
         p[idx].start_time = time;
         p[idx].response_time = p[idx].start_time - p[idx].arrival_time;
         p[idx].started = 1;
+        if (verbose)
+            printf("t=%d: Process %s selected (FCFS)\n", time, p[idx].pid);
 
         /* Execute full burst */
         // record execution segment for Gantt chart
@@ -86,6 +89,8 @@ int schedule_fcfs(SchedulerState *state)
         // 
         /* Process completes */
         p[idx].finish_time = time;
+        if (verbose)
+            printf("t=%d: Process %s completes\n", time, p[idx].pid);
 
         /* Metrics */
         p[idx].turnaround_time = p[idx].finish_time - p[idx].arrival_time;

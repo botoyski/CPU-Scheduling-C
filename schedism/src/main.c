@@ -19,6 +19,7 @@ typedef struct {
     const char *mlfq_config_path;
     int quantum;
     int compare;
+    int verbose;
 } CliOptions;
 
 // parse_args processes the command-line arguments and populates a CliOptions structure. It returns 1 on success and 0 on failure (e.g., invalid arguments). It also prints usage information if needed.
@@ -239,6 +240,7 @@ static void print_usage(const char *prog_name)
     printf("  --quantum=<q>           Time quantum for RR (default: 30)\n");
     printf("  --mlfq-config=<file>    MLFQ config file path\n");
     printf("  --compare               Run all algorithms on the same workload\n");
+    printf("  --verbose               Show per-process scheduling logs\n");
     printf("  --workload=<spec>       Inline workload: PID,ARRIVAL,BURST;...\n");
     printf("  --processes=<spec>      Inline processes: PID:ARRIVAL:BURST,...\n");
 }
@@ -254,6 +256,7 @@ static int parse_cli(int argc, char *argv[], CliOptions *options)
     options->mlfq_config_path = NULL;
     options->quantum = 30;
     options->compare = 0;
+    options->verbose = 0;
 
     for (int i = 1; i < argc; i++)
     {
@@ -300,6 +303,10 @@ static int parse_cli(int argc, char *argv[], CliOptions *options)
         else if (equals_ignore_case(argv[i], "--compare"))
         {
             options->compare = 1;
+        }
+        else if (equals_ignore_case(argv[i], "--verbose"))
+        {
+            options->verbose = 1;
         }
         // for the help option, we will print the usage information and return success. This option does not take a value, so we just check for an exact match.
         else if (equals_ignore_case(argv[i], "--help"))
@@ -399,6 +406,7 @@ int main(int argc, char *argv[])
     state.processes = processes;
     state.num_processes = n;
     state.current_time = 0;
+    state.verbose = options.verbose;
     state.trace_reset_fn = trace_reset;
     state.trace_add_segment_fn = trace_add_segment;
     state.trace_set_context_switches_fn = trace_set_context_switches;

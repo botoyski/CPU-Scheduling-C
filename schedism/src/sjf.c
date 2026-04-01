@@ -17,6 +17,7 @@ int schedule_sjf(SchedulerState *state)
     // extract processes, number of processes, and tracing functions from the scheduler state. We will use the provided tracing functions if available, otherwise default to the ones from gantt.h.
     Process *p = state->processes;
     int n = state->num_processes;
+    int verbose = state->verbose;
 
     // use provided trace functions if available, otherwise default to gantt implementations
     void (*trace_reset_fn)(void) = state->trace_reset_fn ? state->trace_reset_fn : trace_reset;
@@ -70,6 +71,8 @@ int schedule_sjf(SchedulerState *state)
         // schedule the selected process at index idx. We will record its start time, execute it for its burst time, and then record its finish time and calculate its turnaround time, waiting time, and response time. We will also mark it as visited/scheduled and increment the completed count. Finally, we will record the execution segment in the trace using the provided tracing function.
         p[idx].start_time = time;
         int start = time;
+        if (verbose)
+            printf("t=%d: Process %s selected (SJF, burst=%d)\n", time, p[idx].pid, p[idx].burst_time);
 
         // execute the process for its burst time by advancing the current time by the burst time of the selected process. Since SJF is non-preemptive, we will run the process to completion before scheduling another one.
         time += p[idx].burst_time;
@@ -90,6 +93,8 @@ int schedule_sjf(SchedulerState *state)
 
         p[idx].response_time =
             p[idx].start_time - p[idx].arrival_time;
+        if (verbose)
+            printf("t=%d: Process %s completes\n", time, p[idx].pid);
 
         visited[idx] = 1;
         completed++;

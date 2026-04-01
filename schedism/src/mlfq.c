@@ -33,7 +33,8 @@ static void cleanup_mlfq_resources(IntQueue queues[], int levels, int *arrived, 
 }
 
 // enqueue_new_arrivals checks for processes that have arrived at the current time and enqueues them into the highest priority queue (Q0). It updates the arrived array to track which processes have been enqueued. It also prints a message for each new arrival if tracing is not quiet. It returns 1 on success and 0 on failure (e.g., queue overflow).
-static int enqueue_new_arrivals(Process p[], int n, int time, int arrived[], IntQueue *q0, int (*trace_is_quiet_fn)(void))
+static int enqueue_new_arrivals(Process p[], int n, int time, int arrived[], IntQueue *q0,
+                                int (*trace_is_quiet_fn)(void), int verbose)
 {
     // check for newly arrived processes at current time and add to Q0
     for (int i = 0; i < n; i++)
@@ -50,7 +51,7 @@ static int enqueue_new_arrivals(Process p[], int n, int time, int arrived[], Int
             }
             arrived[i] = 1;
             int quiet = trace_is_quiet_fn ? trace_is_quiet_fn() : trace_is_quiet();
-            if (!quiet)
+            if (verbose && !quiet)
                 printf("t=%d: Process %s enters Q0\n", p[i].arrival_time, p[i].pid);
         }
     }
@@ -58,7 +59,8 @@ static int enqueue_new_arrivals(Process p[], int n, int time, int arrived[], Int
 }
 
 // do_priority_boost performs a priority boost by moving all ready processes from lower priority queues to the highest priority queue (Q0). It resets their priority and time_in_queue, and prints a message if tracing is not quiet. It returns 1 on success and 0 on failure (e.g., queue overflow).
-static int do_priority_boost(Process p[], int n, int completed[], int levels, IntQueue queues[], int time, int (*trace_is_quiet_fn)(void))
+static int do_priority_boost(Process p[], int n, int completed[], int levels, IntQueue queues[], int time,
+                             int (*trace_is_quiet_fn)(void), int verbose)
 {
     // move all ready processes from lower priority queues to Q0, and reset their priority and time_in_queue. We will check each queue from lowest to highest (except Q0) and move processes that are not completed. After moving, we will also rotate the existing processes in Q0 to maintain their order. Finally, we will print a message about the boost if tracing is not quiet.
     for (int lvl = 1; lvl < levels; lvl++)
@@ -116,7 +118,7 @@ static int do_priority_boost(Process p[], int n, int completed[], int levels, In
 
     // print a message about the boost if tracing is not quiet
     int quiet = trace_is_quiet_fn ? trace_is_quiet_fn() : trace_is_quiet();
-    if (!quiet)
+    if (verbose && !quiet)
         printf("t=%d: Priority boost: all ready processes -> Q0\n", time);
 
     return 1;
@@ -155,6 +157,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
     int (*trace_add_segment_fn)(int, int, int) = state->trace_add_segment_fn ? state->trace_add_segment_fn : trace_add_segment;
     void (*trace_set_context_switches_fn)(int) = state->trace_set_context_switches_fn ? state->trace_set_context_switches_fn : trace_set_context_switches;
     int (*trace_is_quiet_fn)(void) = state->trace_is_quiet_fn ? state->trace_is_quiet_fn : trace_is_quiet;
+    int verbose = state->verbose;
 
     // reset the trace at the beginning of scheduling
     trace_reset_fn();
@@ -196,7 +199,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
     int next_boost = config->boost_period;
 
     // print the MLFQ configuration and initial message if tracing is not quiet
-    if (!trace_is_quiet_fn())
+    if (verbose && !trace_is_quiet_fn())
     {
         // print the MLFQ configuration details, including the quantum and allotment for each queue level, and the boost period. This helps to understand the scheduling behavior before we print the execution trace.
         printf("\n=== MLFQ Configuration ===\n");
@@ -225,7 +228,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
     while (completed_count < n)
     {
         // check for newly arrived processes at current time and add to Q0
-        if (!enqueue_new_arrivals(p, n, time, arrived, &queues[0], trace_is_quiet_fn))
+        if (!enqueue_new_arrivals(p, n, time, arrived, &queues[0], trace_is_quiet_fn, verbose))
         {
             cleanup_mlfq_resources(queues, config->levels, arrived, completed);
             return -1;
@@ -240,7 +243,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
             if (config->boost_period > 0 && time == next_boost)
             {
                 // perform priority boost when the boost period is reached, and then update the next_boost time
-                if (!do_priority_boost(p, n, completed, config->levels, queues, time, trace_is_quiet_fn))
+                if (!do_priority_boost(p, n, completed, config->levels, queues, time, trace_is_quiet_fn, verbose))
                 {
                     cleanup_mlfq_resources(queues, config->levels, arrived, completed);
                     return -1;
@@ -288,7 +291,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
                     return -1;
                 }
                 // print a message about the demotion if tracing is not quiet
-                if (!trace_is_quiet_fn())
+                if (verbose && !trace_is_quiet_fn())
                     printf("t=%d: Process %s -> Q%d (exhausted Q%d allotment)\n",
                         time,
                         p[idx].pid,
@@ -340,6 +343,8 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
 
         // run the process for the determined time slice, updating its remaining time and time_in_queue, and advancing the global time. We will also check for new arrivals at each tick during this run and enqueue them into Q0. If the process finishes during this run, we will break early to record the correct finish time.
         int segment_start = time;
+        if (verbose && !trace_is_quiet_fn())
+            printf("t=%d: Process %s runs in Q%d for up to %d units\n", time, p[idx].pid, level, run_for);
 
         // run the process for the calculated run_for time, checking for new arrivals at each tick and handling them accordingly. We will also check if the process finishes during this run to break early and record the correct finish time.
         for (int tick = 0; tick < run_for; tick++)
@@ -349,7 +354,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
             time++;
 
             // check for newly arrived processes at each tick and add them to Q0
-            if (!enqueue_new_arrivals(p, n, time, arrived, &queues[0], trace_is_quiet_fn))
+            if (!enqueue_new_arrivals(p, n, time, arrived, &queues[0], trace_is_quiet_fn, verbose))
             {
                 cleanup_mlfq_resources(queues, config->levels, arrived, completed);
                 return -1;
@@ -381,7 +386,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
             p[idx].turnaround_time = p[idx].finish_time - p[idx].arrival_time;
             p[idx].waiting_time = p[idx].turnaround_time - p[idx].burst_time;
             // print a message about the process completion if tracing is not quiet
-            if (!trace_is_quiet_fn())
+            if (verbose && !trace_is_quiet_fn())
                 printf("t=%d: Process %s completes\n", time, p[idx].pid);
         }
         // if not completed, check if it needs to be demoted due to exhausting its allotment, or if it should be re-enqueued in the same queue. We will also handle priority boosts if the boost period is reached during this time.
@@ -396,7 +401,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
                 return -1;
             }
             // perform priority boost when the boost period is reached, and then update the next_boost time
-            if (!do_priority_boost(p, n, completed, config->levels, queues, time, trace_is_quiet_fn))
+            if (!do_priority_boost(p, n, completed, config->levels, queues, time, trace_is_quiet_fn, verbose))
             {
                 cleanup_mlfq_resources(queues, config->levels, arrived, completed);
                 return -1;
@@ -422,7 +427,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
                         return -1;
                     }
                     // print a message about the demotion if tracing is not quiet
-                    if (!trace_is_quiet_fn())
+                    if (verbose && !trace_is_quiet_fn())
                         printf("t=%d: Process %s -> Q%d (exhausted Q%d allotment)\n",
                                time,
                                p[idx].pid,

@@ -32,6 +32,7 @@ typedef struct {
 	Process *processes;
 	int num_processes;
 	int current_time;
+	int verbose;
 	void (*trace_reset_fn)(void);
 	int (*trace_add_segment_fn)(int pid_index, int start, int end);
 	void (*trace_set_context_switches_fn)(int count);
