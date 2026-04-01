@@ -15,14 +15,11 @@ int schedule_fcfs(SchedulerState *state)
 {
     Process *p = state->processes;
     int n = state->num_processes;
-    int verbose = state->verbose;
+    int verbose = scheduler_is_verbose(state);
+    SchedulerTraceOps trace;
+    scheduler_get_trace_ops(state, &trace);
 
-    // use provided trace functions if available, otherwise default to gantt implementations
-    void (*trace_reset_fn)(void) = state->trace_reset_fn ? state->trace_reset_fn : trace_reset;
-    int (*trace_add_segment_fn)(int, int, int) = state->trace_add_segment_fn ? state->trace_add_segment_fn : trace_add_segment;
-    void (*trace_set_context_switches_fn)(int) = state->trace_set_context_switches_fn ? state->trace_set_context_switches_fn : trace_set_context_switches;
-
-    trace_reset_fn();
+    trace.reset();
 
     int completed = 0;
     int time = 0;
@@ -69,9 +66,7 @@ int schedule_fcfs(SchedulerState *state)
         }
 
         /* Process starts */
-        p[idx].start_time = time;
-        p[idx].response_time = p[idx].start_time - p[idx].arrival_time;
-        p[idx].started = 1;
+        scheduler_mark_process_started(&p[idx], time);
         if (verbose)
             printf("t=%d: Process %s selected (FCFS)\n", time, p[idx].pid);
 
@@ -80,7 +75,7 @@ int schedule_fcfs(SchedulerState *state)
         int start = time;
         time += p[idx].burst_time;
         // add segment to trace, merging with previous if same process and contiguous
-        if (!trace_add_segment_fn(idx, start, time))
+        if (!trace.add_segment(idx, start, time))
         {
             fprintf(stderr, "Error: memory allocation failed in FCFS trace.\n");
             return -1;
@@ -88,20 +83,16 @@ int schedule_fcfs(SchedulerState *state)
 
         // 
         /* Process completes */
-        p[idx].finish_time = time;
+        scheduler_mark_process_completed(&p[idx], time);
         if (verbose)
             printf("t=%d: Process %s completes\n", time, p[idx].pid);
-
-        /* Metrics */
-        p[idx].turnaround_time = p[idx].finish_time - p[idx].arrival_time;
-        p[idx].waiting_time = p[idx].turnaround_time - p[idx].burst_time;
 
         done[idx] = 1;
         completed++;
     }
 
     // FCFS is non-preemptive, so context switches = 0
-    trace_set_context_switches_fn(0);
+    trace.set_context_switches(0);
     state->current_time = time;
     return 0;
 }

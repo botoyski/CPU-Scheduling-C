@@ -39,6 +39,18 @@ typedef struct {
 	int (*trace_is_quiet_fn)(void);
 } SchedulerState;
 
+typedef struct {
+	void (*reset)(void);
+	int (*add_segment)(int pid_index, int start, int end);
+	void (*set_context_switches)(int count);
+	int (*is_quiet)(void);
+} SchedulerTraceOps;
+
+void scheduler_get_trace_ops(const SchedulerState *state, SchedulerTraceOps *ops);
+int scheduler_is_verbose(const SchedulerState *state);
+void scheduler_mark_process_started(Process *process, int time);
+void scheduler_mark_process_completed(Process *process, int finish_time);
+
 int schedule_fcfs(SchedulerState *state);
 int schedule_sjf(SchedulerState *state);
 int schedule_stcf(SchedulerState *state);

@@ -17,15 +17,12 @@ int schedule_stcf(SchedulerState *state)
     // extract processes, number of processes, and tracing functions from the scheduler state. We will use the provided tracing functions if available, otherwise default to the ones from gantt.h.
     Process *p = state->processes;
     int n = state->num_processes;
-    int verbose = state->verbose;
-
-    // use provided trace functions if available, otherwise default to gantt implementations
-    void (*trace_reset_fn)(void) = state->trace_reset_fn ? state->trace_reset_fn : trace_reset;
-    int (*trace_add_segment_fn)(int, int, int) = state->trace_add_segment_fn ? state->trace_add_segment_fn : trace_add_segment;
-    void (*trace_set_context_switches_fn)(int) = state->trace_set_context_switches_fn ? state->trace_set_context_switches_fn : trace_set_context_switches;
+    int verbose = scheduler_is_verbose(state);
+    SchedulerTraceOps trace;
+    scheduler_get_trace_ops(state, &trace);
 
     // reset the trace at the beginning of scheduling
-    trace_reset_fn();
+    trace.reset();
 
     // initialize counters for completed processes and current time, as well as variables to track the currently running process and the start time of its execution segment. We will also track the number of context switches that occur during scheduling.
     int time = 0;
@@ -65,7 +62,7 @@ int schedule_stcf(SchedulerState *state)
             if (current_pid != -1)
             {
                 // if there was a previously running process, record the end of its execution segment in the trace using the provided tracing function, and reset the current_pid and segment_start variables to indicate that no process is currently running. Then we will advance time by 1 and continue to the next iteration to check for ready processes again.
-                if (!trace_add_segment_fn(current_pid, segment_start, time))
+                if (!trace.add_segment(current_pid, segment_start, time))
                 {
                     fprintf(stderr, "Error: memory allocation failed in STCF trace.\n");
                     return -1;
@@ -84,7 +81,7 @@ int schedule_stcf(SchedulerState *state)
             if (current_pid != -1)
             {
                 // if there was a previously running process, record the end of its execution segment in the trace using the provided tracing function, and reset the current_pid and segment_start variables to indicate that no process is currently running. Then we will update current_pid and segment_start to reflect the newly scheduled process and the start time of its execution segment. We will also increment the context switch count since we are switching from one process to another.
-                if (!trace_add_segment_fn(current_pid, segment_start, time))
+                if (!trace.add_segment(current_pid, segment_start, time))
                 {
                     fprintf(stderr, "Error: memory allocation failed in STCF trace.\n");
                     return -1;
@@ -101,11 +98,7 @@ int schedule_stcf(SchedulerState *state)
         /* first execution */
         if (!p[idx].started)
         {
-            p[idx].start_time = time;
-            p[idx].response_time =
-                time - p[idx].arrival_time;
-
-            p[idx].started = 1;
+            scheduler_mark_process_started(&p[idx], time);
         }
 
         // execute the selected process for 1 time unit by decrementing its remaining_time and advancing the current time by 1. After executing, we will check if the process has completed (remaining_time == 0). If it has completed, we will record the end of its execution segment in the trace using the provided tracing function, reset current_pid and segment_start to indicate that no process is currently running, and then record its finish time and calculate its turnaround time and waiting time based on its arrival time and burst time. We will also increment the completed count since this process has finished execution.
@@ -120,7 +113,7 @@ int schedule_stcf(SchedulerState *state)
         {
             completed++;
 
-            if (!trace_add_segment_fn(idx, segment_start, time))
+            if (!trace.add_segment(idx, segment_start, time))
             {
                 fprintf(stderr, "Error: memory allocation failed in STCF trace.\n");
                 return -1;
@@ -128,19 +121,13 @@ int schedule_stcf(SchedulerState *state)
             current_pid = -1;
             segment_start = -1;
 
-            p[idx].finish_time = time;
-
-            p[idx].turnaround_time =
-                p[idx].finish_time - p[idx].arrival_time;
-
-            p[idx].waiting_time =
-                p[idx].turnaround_time - p[idx].burst_time;
+            scheduler_mark_process_completed(&p[idx], time);
             if (verbose)
                 printf("t=%d: Process %s completes\n", time, p[idx].pid);
         }
     }
 
-    trace_set_context_switches_fn(context_switches);
+    trace.set_context_switches(context_switches);
     state->current_time = time;
     return 0;
 }

@@ -5,6 +5,35 @@
 #include "gantt.h"
 #include "utils.h"
 
+void scheduler_get_trace_ops(const SchedulerState *state, SchedulerTraceOps *ops)
+{
+    ops->reset = state->trace_reset_fn ? state->trace_reset_fn : trace_reset;
+    ops->add_segment = state->trace_add_segment_fn ? state->trace_add_segment_fn : trace_add_segment;
+    ops->set_context_switches = state->trace_set_context_switches_fn ? state->trace_set_context_switches_fn : trace_set_context_switches;
+    ops->is_quiet = state->trace_is_quiet_fn ? state->trace_is_quiet_fn : trace_is_quiet;
+}
+
+int scheduler_is_verbose(const SchedulerState *state)
+{
+    SchedulerTraceOps ops;
+    scheduler_get_trace_ops(state, &ops);
+    return state->verbose && !ops.is_quiet();
+}
+
+void scheduler_mark_process_started(Process *process, int time)
+{
+    process->start_time = time;
+    process->response_time = time - process->arrival_time;
+    process->started = 1;
+}
+
+void scheduler_mark_process_completed(Process *process, int finish_time)
+{
+    process->finish_time = finish_time;
+    process->turnaround_time = process->finish_time - process->arrival_time;
+    process->waiting_time = process->turnaround_time - process->burst_time;
+}
+
 int parse_mlfq_config(const char *path, MLFQConfig *config)
 {
     FILE *fp = fopen(path, "r");

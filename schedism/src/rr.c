@@ -19,13 +19,11 @@ int schedule_rr(SchedulerState *state, int quantum)
 {
     Process *p = state->processes;
     int n = state->num_processes;
-    int verbose = state->verbose;
+    int verbose = scheduler_is_verbose(state);
+    SchedulerTraceOps trace;
+    scheduler_get_trace_ops(state, &trace);
 
-    void (*trace_reset_fn)(void) = state->trace_reset_fn ? state->trace_reset_fn : trace_reset;
-    int (*trace_add_segment_fn)(int, int, int) = state->trace_add_segment_fn ? state->trace_add_segment_fn : trace_add_segment;
-    void (*trace_set_context_switches_fn)(int) = state->trace_set_context_switches_fn ? state->trace_set_context_switches_fn : trace_set_context_switches;
-
-    trace_reset_fn();
+    trace.reset();
 
     int completed = 0;
     int time = 0;
@@ -93,9 +91,7 @@ int schedule_rr(SchedulerState *state, int quantum)
         // record start time and response time if first time scheduled
         if (!p[idx].started)
         {
-            p[idx].start_time = time;
-            p[idx].response_time = time - p[idx].arrival_time;
-            p[idx].started = 1;
+            scheduler_mark_process_started(&p[idx], time);
         }
 
         // run process for a time quantum or until completion
@@ -120,7 +116,7 @@ int schedule_rr(SchedulerState *state, int quantum)
         }
 
         // record execution segment for Gantt chart
-        if (!trace_add_segment_fn(idx, segment_start, time))
+        if (!trace.add_segment(idx, segment_start, time))
         {
             fprintf(stderr, "Error: memory allocation failed while recording RR Gantt chart.\n");
             goto cleanup;
@@ -130,9 +126,7 @@ int schedule_rr(SchedulerState *state, int quantum)
         if (p[idx].remaining_time == 0)
         {
             completed++;
-            p[idx].finish_time = time;
-            p[idx].turnaround_time = p[idx].finish_time - p[idx].arrival_time;
-            p[idx].waiting_time = p[idx].turnaround_time - p[idx].burst_time;
+            scheduler_mark_process_completed(&p[idx], time);
             if (verbose)
                 printf("t=%d: Process %s completes\n", time, p[idx].pid);
         }
@@ -152,7 +146,7 @@ int schedule_rr(SchedulerState *state, int quantum)
     }
 
     // set total context switches in trace
-    trace_set_context_switches_fn(context_switches);
+    trace.set_context_switches(context_switches);
     state->current_time = time;
     result = 0;
 

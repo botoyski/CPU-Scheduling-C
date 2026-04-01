@@ -152,15 +152,12 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
     Process *p = state->processes;
     int n = state->num_processes;
 
-    // use provided tracing functions or default to the ones from gantt.h
-    void (*trace_reset_fn)(void) = state->trace_reset_fn ? state->trace_reset_fn : trace_reset;
-    int (*trace_add_segment_fn)(int, int, int) = state->trace_add_segment_fn ? state->trace_add_segment_fn : trace_add_segment;
-    void (*trace_set_context_switches_fn)(int) = state->trace_set_context_switches_fn ? state->trace_set_context_switches_fn : trace_set_context_switches;
-    int (*trace_is_quiet_fn)(void) = state->trace_is_quiet_fn ? state->trace_is_quiet_fn : trace_is_quiet;
-    int verbose = state->verbose;
+    SchedulerTraceOps trace;
+    scheduler_get_trace_ops(state, &trace);
+    int verbose = scheduler_is_verbose(state);
 
     // reset the trace at the beginning of scheduling
-    trace_reset_fn();
+    trace.reset();
 
     // initialize data structures for MLFQ scheduling, including arrays to track arrived and completed processes, and the queues for each priority level. We will also initialize counters for completed processes, current time, context switches, and previous process index.
     int completed_count = 0;
@@ -199,7 +196,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
     int next_boost = config->boost_period;
 
     // print the MLFQ configuration and initial message if tracing is not quiet
-    if (verbose && !trace_is_quiet_fn())
+    if (verbose)
     {
         // print the MLFQ configuration details, including the quantum and allotment for each queue level, and the boost period. This helps to understand the scheduling behavior before we print the execution trace.
         printf("\n=== MLFQ Configuration ===\n");
@@ -228,7 +225,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
     while (completed_count < n)
     {
         // check for newly arrived processes at current time and add to Q0
-        if (!enqueue_new_arrivals(p, n, time, arrived, &queues[0], trace_is_quiet_fn, verbose))
+        if (!enqueue_new_arrivals(p, n, time, arrived, &queues[0], trace.is_quiet, verbose))
         {
             cleanup_mlfq_resources(queues, config->levels, arrived, completed);
             return -1;
@@ -243,7 +240,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
             if (config->boost_period > 0 && time == next_boost)
             {
                 // perform priority boost when the boost period is reached, and then update the next_boost time
-                if (!do_priority_boost(p, n, completed, config->levels, queues, time, trace_is_quiet_fn, verbose))
+                if (!do_priority_boost(p, n, completed, config->levels, queues, time, trace.is_quiet, verbose))
                 {
                     cleanup_mlfq_resources(queues, config->levels, arrived, completed);
                     return -1;
@@ -271,9 +268,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
         // record start time and response time if first time scheduled
         if (!p[idx].started)
         {
-            p[idx].start_time = time;
-            p[idx].response_time = time - p[idx].arrival_time;
-            p[idx].started = 1;
+            scheduler_mark_process_started(&p[idx], time);
         }
 
         // check if the process has exhausted its allotment at this level and needs to be demoted before running
@@ -291,7 +286,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
                     return -1;
                 }
                 // print a message about the demotion if tracing is not quiet
-                if (verbose && !trace_is_quiet_fn())
+                if (verbose)
                     printf("t=%d: Process %s -> Q%d (exhausted Q%d allotment)\n",
                         time,
                         p[idx].pid,
@@ -343,7 +338,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
 
         // run the process for the determined time slice, updating its remaining time and time_in_queue, and advancing the global time. We will also check for new arrivals at each tick during this run and enqueue them into Q0. If the process finishes during this run, we will break early to record the correct finish time.
         int segment_start = time;
-        if (verbose && !trace_is_quiet_fn())
+        if (verbose)
             printf("t=%d: Process %s runs in Q%d for up to %d units\n", time, p[idx].pid, level, run_for);
 
         // run the process for the calculated run_for time, checking for new arrivals at each tick and handling them accordingly. We will also check if the process finishes during this run to break early and record the correct finish time.
@@ -354,7 +349,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
             time++;
 
             // check for newly arrived processes at each tick and add them to Q0
-            if (!enqueue_new_arrivals(p, n, time, arrived, &queues[0], trace_is_quiet_fn, verbose))
+            if (!enqueue_new_arrivals(p, n, time, arrived, &queues[0], trace.is_quiet, verbose))
             {
                 cleanup_mlfq_resources(queues, config->levels, arrived, completed);
                 return -1;
@@ -370,7 +365,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
         }
 
         // record the execution segment for the Gantt chart using the provided tracing function, and check for memory allocation failure
-        if (!trace_add_segment_fn(idx, segment_start, time))
+        if (!trace.add_segment(idx, segment_start, time))
         {
             fprintf(stderr, "Error: memory allocation failed while recording MLFQ Gantt chart.\n");
             cleanup_mlfq_resources(queues, config->levels, arrived, completed);
@@ -382,11 +377,9 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
         {
             completed[idx] = 1;
             completed_count++;
-            p[idx].finish_time = time;
-            p[idx].turnaround_time = p[idx].finish_time - p[idx].arrival_time;
-            p[idx].waiting_time = p[idx].turnaround_time - p[idx].burst_time;
+            scheduler_mark_process_completed(&p[idx], time);
             // print a message about the process completion if tracing is not quiet
-            if (verbose && !trace_is_quiet_fn())
+            if (verbose)
                 printf("t=%d: Process %s completes\n", time, p[idx].pid);
         }
         // if not completed, check if it needs to be demoted due to exhausting its allotment, or if it should be re-enqueued in the same queue. We will also handle priority boosts if the boost period is reached during this time.
@@ -401,7 +394,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
                 return -1;
             }
             // perform priority boost when the boost period is reached, and then update the next_boost time
-            if (!do_priority_boost(p, n, completed, config->levels, queues, time, trace_is_quiet_fn, verbose))
+            if (!do_priority_boost(p, n, completed, config->levels, queues, time, trace.is_quiet, verbose))
             {
                 cleanup_mlfq_resources(queues, config->levels, arrived, completed);
                 return -1;
@@ -427,7 +420,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
                         return -1;
                     }
                     // print a message about the demotion if tracing is not quiet
-                    if (verbose && !trace_is_quiet_fn())
+                    if (verbose)
                         printf("t=%d: Process %s -> Q%d (exhausted Q%d allotment)\n",
                                time,
                                p[idx].pid,
@@ -451,7 +444,7 @@ int schedule_mlfq(SchedulerState *state, MLFQConfig *config)
     }
 
     // after the main scheduling loop, we will set the total context switches in the trace using the provided tracing function, and update the current time in the scheduler state. Finally, we will clean up all dynamically allocated resources used for MLFQ scheduling before returning success.
-    trace_set_context_switches_fn(context_switches);
+    trace.set_context_switches(context_switches);
     state->current_time = time;
 
     // clean up all dynamically allocated resources used for MLFQ scheduling before returning success
