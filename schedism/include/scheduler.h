@@ -44,6 +44,14 @@ int schedule_stcf(SchedulerState *state);
 int schedule_rr(SchedulerState *state, int quantum);
 int schedule_mlfq(SchedulerState *state, MLFQConfig *config);
 
+int parse_mlfq_config(const char *path, MLFQConfig *config);
+void fill_default_mlfq_config(MLFQConfig *config);
+int run_algorithm(SchedulerState *state, const char *alg, int quantum, MLFQConfig *mlfq_config);
+int run_single_algorithm(SchedulerState *state, const char *alg, int quantum, MLFQConfig *mlfq_config,
+						 Process *processes, int n);
+int run_compare_algorithms(SchedulerState *state, int rr_quantum, MLFQConfig *mlfq_config, Process *processes,
+						   int n, const char *source_label);
+
 void print_results(Process p[], int n);
 
 #endif

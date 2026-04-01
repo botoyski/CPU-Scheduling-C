@@ -2,7 +2,7 @@ CC=gcc
 CFLAGS=-Wall -I./include -I. -I..
 
 all:
-	$(CC) $(CFLAGS) src/main.c src/fcfs.c src/sjf.c src/stcf.c src/rr.c src/mlfq.c src/process.c src/metrics.c src/gantt.c src/utils.c src/queue.c -o schedsim
+	$(CC) $(CFLAGS) src/main.c src/scheduler.c src/fcfs.c src/sjf.c src/stcf.c src/rr.c src/mlfq.c src/process.c src/metrics.c src/gantt.c src/utils.c src/queue.c -o schedsim
 
 test-metrics:
 	$(CC) $(CFLAGS) test/test_metrics.c src/metrics.c src/gantt.c -o test_metrics

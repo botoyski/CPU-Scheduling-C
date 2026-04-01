@@ -225,151 +225,6 @@ static int load_workload(const char *path, Process **out_processes, int *out_n)
     return 1;
 }
 
-// parse_mlfq_config reads the MLFQ configuration from a file, where each line defines either the boost period or a queue level with its quantum and allotment. It validates the format and values, and populates an MLFQConfig structure. It returns 1 on success and 0 on failure.
-static int parse_mlfq_config(const char *path, MLFQConfig *config)
-{
-    // open the MLFQ config file for reading, and check if it was opened successfully
-    FILE *fp = fopen(path, "r");
-    if (fp == NULL)
-    {
-        fprintf(stderr, "Error: cannot open MLFQ config file '%s'.\n", path);
-        return 0;
-    }
-
-    // initialize config with default values, then read lines from the file and parse the boost period and queue level definitions. We will validate the format and values, and if any line is invalid, we will print an error and return failure. After parsing, we will check that we have at least 3 levels defined and that the levels are properly configured (e.g., FCFS level must be -1 quantum and allotment, RR levels must have positive quantum and allotment, and FCFS level cannot appear below RR levels). If validation passes, we will return success.
-    config->levels = 0;
-    config->boost_period = 200;
-    for (int i = 0; i < MLFQ_MAX_LEVELS; i++)
-    {
-        config->quantum[i] = 0;
-        config->allotment[i] = 0;
-    }
-
-    // read each line from the file, trim it, and if it's not blank or a comment, parse it as either a boost period definition or a queue level definition. We will validate the format and values, and if valid, store it in the config structure. If any line is invalid, we will print an error and return failure.
-    char line[256];
-    while (fgets(line, sizeof(line), fp) != NULL)
-    {
-        // trim the line and check if it's blank or a comment; if so, skip it
-        if (is_blank_or_comment(line))
-            continue;
-
-        // first check if the line defines the boost period in the format "BOOST_PERIOD <value>". If so, parse and validate the value, and store it in the config. If the line does not match this format, then check if it defines a queue level in the format "Q<id> <quantum> <allotment>". If so, parse and validate the values, and store them in the config. If the line does not match either format or if any validation fails, print an error and return failure.
-        char key[32];
-        int value;
-        char extra[32];
-        int parsed = sscanf(line, "%31s %d %31s", key, &value, extra);
-        if (parsed >= 1 && strcmp(key, "BOOST_PERIOD") == 0)
-        {
-            // if the line starts with "BOOST_PERIOD", we expect exactly 2 fields (key and value) and no extra fields. We will validate that the value is a positive integer. If validation fails, print an error and return failure. If valid, store the boost period in the config and continue to the next line.
-            if (parsed != 2 || value <= 0)
-            {
-                fprintf(stderr, "Error: invalid BOOST_PERIOD entry: %s", line);
-                fclose(fp);
-                return 0;
-            }
-            config->boost_period = value;
-            continue;
-        }
-
-        // if the line does not define the boost period, check if it defines a queue level in the format "Q<id> <quantum> <allotment>". We will validate that the id is within range, that quantum and allotment are valid (quantum must be -1 for FCFS or positive for RR, and allotment must be -1 for FCFS or positive for RR), and that FCFS levels cannot appear below RR levels. If validation fails, print an error and return failure. If valid, store the queue level definition in the config and continue to the next line.
-        int qid;
-        int quantum;
-        int allotment;
-        if (sscanf(line, "Q%d %d %d", &qid, &quantum, &allotment) == 3)
-        {
-            // validate the queue level definition and store it in the config
-            if (qid < 0 || qid >= MLFQ_MAX_LEVELS)
-            {
-                fprintf(stderr, "Error: queue id out of range in line: %s", line);
-                fclose(fp);
-                return 0;
-            }
-
-            // validate quantum and allotment values based on whether this is an FCFS level (quantum and allotment must be -1) or an RR level (quantum and allotment must be positive). If validation fails, print an error and return failure. If valid, store the quantum and allotment in the config for this queue level, and update the levels count if needed.
-            if (quantum == 0 || quantum < -1)
-            {
-                fprintf(stderr, "Error: invalid quantum in line: %s", line);
-                fclose(fp);
-                return 0;
-            }
-
-            // validate allotment value
-            if (allotment == 0 || allotment < -1)
-            {
-                fprintf(stderr, "Error: invalid allotment in line: %s", line);
-                fclose(fp);
-                return 0;
-            }
-
-            // validate that FCFS levels have quantum and allotment of -1, and RR levels have positive quantum and allotment. If validation fails, print an error and return failure.
-            if ((quantum == -1 && allotment != -1) || (quantum != -1 && allotment == -1))
-            {
-                fprintf(stderr, "Error: FCFS queue must use -1 -1 and RR queues must use positive values: %s", line);
-                fclose(fp);
-                return 0;
-            }
-
-            // validate that FCFS levels cannot appear below RR levels. If validation fails, print an error and return failure.
-            config->quantum[qid] = quantum;
-            config->allotment[qid] = allotment;
-            if (qid + 1 > config->levels)
-                config->levels = qid + 1;
-            continue;
-        }
-        // if the line does not match either format, print an error and return failure
-        fprintf(stderr, "Error: invalid MLFQ config line: %s", line);
-        fclose(fp);
-        return 0;
-    }
-
-    // close the file after reading
-    fclose(fp);
-
-    // after parsing, validate that we have at least 3 levels defined and that the levels are properly configured (e.g., FCFS level must be -1 quantum and allotment, RR levels must have positive quantum and allotment, and FCFS level cannot appear below RR levels). If validation fails, print an error and return failure. If validation passes, return success.
-    if (config->levels < 3)
-    {
-        fprintf(stderr, "Error: MLFQ requires at least 3 queue levels.\n");
-        return 0;
-    }
-
-    // validate that all defined levels have valid quantum and allotment values, and that FCFS levels do not appear below RR levels. If validation fails, print an error and return failure.
-    for (int lvl = 0; lvl < config->levels; lvl++)
-    {
-        // if this level is defined (quantum and allotment not both zero), validate its configuration
-        if (config->quantum[lvl] == 0 || config->allotment[lvl] == 0)
-        {
-            fprintf(stderr, "Error: missing queue definition for Q%d.\n", lvl);
-            return 0;
-        }
-    }
-
-    // validate that FCFS levels have quantum and allotment of -1, and RR levels have positive quantum and allotment. Also validate that FCFS levels cannot appear below RR levels. If validation fails, print an error and return failure.
-    int saw_fcfs = 0;
-    for (int lvl = 0; lvl < config->levels; lvl++)
-    {
-        // if this level is FCFS, quantum and allotment must be -1; if it's RR, quantum and allotment must be positive. Also, if we see an FCFS level, we set a flag, and if we see an RR level after that, it's an error.
-        if (config->quantum[lvl] == -1)
-        {
-            saw_fcfs = 1;
-        }
-        // if we see an RR level after seeing an FCFS level, it's an error because FCFS levels cannot appear below RR levels in the MLFQ hierarchy
-        else if (saw_fcfs)
-        {
-            fprintf(stderr, "Error: RR queue cannot appear below an FCFS queue in MLFQ levels.\n");
-            return 0;
-        }
-    }
-
-    // validate that the boost period is a positive integer. If validation fails, print an error and return failure.
-    if (config->boost_period <= 0)
-    {
-        fprintf(stderr, "Error: boost_period must be positive.\n");
-        return 0;
-    }
-
-    return 1;
-}
-
 // print_usage displays the usage information for the program, including the available command-line options and their descriptions. It takes the program name as an argument to customize the usage message.
 static void print_usage(const char *prog_name)
 {
@@ -506,67 +361,6 @@ static int parse_cli(int argc, char *argv[], CliOptions *options)
     return 1;
 }
 
-// fill_default_mlfq_config populates an MLFQConfig structure with default values for a 3-level MLFQ configuration. The first level is FCFS with quantum and allotment of -1, the second level is RR with quantum 30 and allotment 150, and the third level is FCFS with quantum and allotment of -1. The boost period is set to 200. This function is used when the user does not provide an MLFQ config file.
-static void fill_default_mlfq_config(MLFQConfig *config)
-{
-    config->levels = 3;
-    config->quantum[0] = 10;  config->allotment[0] = 50;
-    config->quantum[1] = 30;  config->allotment[1] = 150;
-    config->quantum[2] = -1;  config->allotment[2] = -1;
-    config->boost_period = 200;
-}
-
-// print_compare_table displays a formatted table comparing the performance metrics of different scheduling algorithms for a given workload. It takes the input path (or source description), the RR quantum used, and an array of MetricsSummary structures containing the metrics for each algorithm. The table includes average turnaround time, average waiting time, average response time, and context switches for each algorithm.
-static void print_compare_table(const char *input_path, int rr_quantum, const MetricsSummary rows[5])
-{
-    const char *names[] = {"FCFS", "SJF", "STCF", "RR", "MLFQ"};
-    printf("\n=== Algorithm Comparison for %s ===\n\n", input_path);
-    printf("Algorithm | Avg TT | Avg WT | Avg RT | Context Switches\n");
-    printf("----------|--------|--------|--------|------------------\n");
-    for (int i = 0; i < 5; i++) {
-        if (i == 3)
-            printf("%s (q=%d) | %6.1f | %6.1f | %6.1f | %16d\n", names[i], rr_quantum,
-                   rows[i].avg_turnaround, rows[i].avg_waiting, rows[i].avg_response, rows[i].context_switches);
-        else
-            printf("%-9s | %6.1f | %6.1f | %6.1f | %16d\n", names[i],
-                   rows[i].avg_turnaround, rows[i].avg_waiting, rows[i].avg_response, rows[i].context_switches);
-    }
-}
-
-// run_algorithm is a helper function that takes the scheduler state, algorithm name, RR quantum, and MLFQ config, and dispatches to the appropriate scheduling function based on the algorithm name. It returns 0 on success and 1 on failure (e.g., if the algorithm name is unknown).
-static int run_algorithm(SchedulerState *state, const char *alg, int quantum, MLFQConfig *mlfq_config)
-{
-    if (equals_ignore_case(alg, "FCFS")) return schedule_fcfs(state);
-    if (equals_ignore_case(alg, "SJF")) return schedule_sjf(state);
-    if (equals_ignore_case(alg, "STCF")) return schedule_stcf(state);
-    if (equals_ignore_case(alg, "RR")) return schedule_rr(state, quantum);
-    if (equals_ignore_case(alg, "MLFQ")) return schedule_mlfq(state, mlfq_config);
-    return 1;
-}
-
-// run_single_algorithm is a helper function that runs a single scheduling algorithm on the given state and processes, prints the results, and frees the trace. It validates the algorithm name before running, and returns 1 on success or 0 on failure.
-static int run_single_algorithm(SchedulerState *state, const char *alg, int quantum, MLFQConfig *mlfq_config, Process *processes, int n)
-{
-    // reset all processes to initialize their metrics and state before running the algorithm
-    // Validate algorithm first
-    if (!equals_ignore_case(alg, "FCFS") && !equals_ignore_case(alg, "SJF") &&
-        !equals_ignore_case(alg, "STCF") && !equals_ignore_case(alg, "RR") &&
-        !equals_ignore_case(alg, "MLFQ")) {
-        fprintf(stderr, "Error: unknown algorithm '%s'.\n", alg);
-        return 0;
-    }
-    
-    // If the algorithm is valid, we can proceed to reset processes and run it
-    printf("\nRunning %s\n", alg);
-    if (equals_ignore_case(alg, "RR")) printf("Using time quantum q=%d\n", quantum);
-    
-    // reset processes before running the algorithm
-    if (run_algorithm(state, alg, quantum, mlfq_config) != 0) return 0;
-    print_results(processes, n);
-    trace_free();
-    return 1;
-}
-
 // main is the entry point of the program. It parses command-line arguments, loads the workload, initializes the scheduler state, and runs the specified scheduling algorithm(s) while printing the results. It also handles error cases and resource cleanup.
 int main(int argc, char *argv[])
 {
@@ -625,31 +419,13 @@ int main(int argc, char *argv[])
         fill_default_mlfq_config(&mlfq_config);
     }
 
-    // if the compare flag is set, run all algorithms on the same workload, compute their metrics summaries, and print a comparison table. We will set the trace to quiet mode to avoid printing individual traces for each algorithm. After running all algorithms, we will reset the trace to non-quiet mode and print the comparison table. Finally, we will free the trace resources.
+    // if the compare flag is set, run all algorithms on the same workload and print a comparison table.
     if (options.compare) {
-        MetricsSummary rows[5];
-        const char *algs[] = {"FCFS", "SJF", "STCF", "RR", "MLFQ"};
-        trace_set_quiet(1);
-
-        // run each algorithm in the list on the same workload, resetting the processes and scheduler state before each run. We will compute the metrics summary for each algorithm and store it in the rows array. If any algorithm run fails, we will free resources and return with an error code.
-        for (int i = 0; i < 5; i++) {
-            process_reset_all(processes, n);
-            state.current_time = 0;
-            // run the algorithm and compute metrics summary
-            if (run_algorithm(&state, algs[i], options.quantum, &mlfq_config) != 0) {
-                trace_set_quiet(0);
-                trace_free();
-                free(processes);
-                return 1;
-            }
-            compute_metrics_summary(processes, n, &rows[i]);
-        }
-
-        // after running all algorithms, reset the trace to non-quiet mode and print the comparison table. Finally, free the trace resources.
-        trace_set_quiet(0);
         const char *source = options.input_path != NULL ? options.input_path : "<inline-workload>";
-        print_compare_table(source, options.quantum, rows);
-        trace_free();
+        if (!run_compare_algorithms(&state, options.quantum, &mlfq_config, processes, n, source)) {
+            free(processes);
+            return 1;
+        }
     } 
     // if the compare flag is not set, run only the specified algorithm on the workload and print the results. If running the algorithm fails, free resources and return with an error code.
     else {
