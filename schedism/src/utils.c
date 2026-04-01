@@ -4,6 +4,7 @@
 
 #include "utils.h"
 
+// 
 int equals_ignore_case(const char *a, const char *b)
 {
     while (*a && *b)

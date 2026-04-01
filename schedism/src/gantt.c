@@ -167,16 +167,6 @@ static char pid_symbol(const Process *p)
     return '#';
 }
 
-static void print_regular_markers(int total_time, int step)
-{
-    printf("Time markers (every %d):", step);
-    for (int t = 0; t <= total_time; t += step)
-        printf(" %d", t);
-    if (total_time % step != 0)
-        printf(" %d", total_time);
-    printf("\n");
-}
-
 void print_gantt(Process p[], int n)
 {
     int total_time = trace_total_time();
@@ -185,34 +175,61 @@ void print_gantt(Process p[], int n)
 
     (void)n;
 
-    printf("\n=== Gantt Chart (1 unit = 1 char) ===\n");
-    printf("CPU : ");
-    for (int t = 0; t < total_time; t++)
-    {
-        int idx = trace_pid_at_time(t);
-        if (idx < 0)
-            putchar('.');
-        else
-            putchar(pid_symbol(&p[idx]));
-    }
-    printf("\n");
-    print_regular_markers(total_time, 10);
+    printf("\n=== Gantt Chart (Grid Style) ===\n");
 
-    if (total_time > 80)
+    const int slice_width = 30;
+    const int cells_per_row = 5;
+    int num_slices = (total_time + slice_width - 1) / slice_width;
+    
+    for (int row = 0; row < num_slices; row += cells_per_row)
     {
-        const int scale = 10;
-        printf("\n=== Scaled Gantt Chart ===\n");
-        printf("Each char = %d time units\n", scale);
-        printf("CPU : ");
-        for (int t = 0; t < total_time; t += scale)
+        int slices_in_row = (row + cells_per_row <= num_slices) ? cells_per_row : (num_slices - row);
+        
+        printf("Time |");
+        for (int col = 0; col < slices_in_row; col++)
         {
-            int idx = trace_pid_at_time(t);
-            if (idx < 0)
-                putchar('.');
-            else
-                putchar(pid_symbol(&p[idx]));
+            int slice_num = row + col;
+            int start = slice_num * slice_width;
+            int end = (slice_num + 1) * slice_width;
+            if (end > total_time)
+                end = total_time;
+            printf(" %4d–%-4d |", start, end - 1);
         }
         printf("\n");
-        print_regular_markers(total_time, 50);
+        
+        printf("CPU  |");
+        for (int col = 0; col < slices_in_row; col++)
+        {
+            int slice_num = row + col;
+            int start = slice_num * slice_width;
+            int end = (slice_num + 1) * slice_width;
+            if (end > total_time)
+                end = total_time;
+            
+            int idx = trace_pid_at_time(start);
+            
+            if (idx < 0)
+                printf("   IDLE   |");
+            else
+            {
+                char sym = pid_symbol(&p[idx]);
+                printf("    %c     |", sym);
+            }
+        }
+        printf("\n\n");
     }
+    
+    printf("=== Execution Summary ===\n");
+    if (g_count > 0)
+    {
+        for (int i = 0; i < g_count; i++)
+        {
+            int idx = g_segments[i].pid_index;
+            int start = g_segments[i].start;
+            int end = g_segments[i].end;
+            char sym = pid_symbol(&p[idx]);
+            printf("Segment %d: %c [%d–%d] (%d units)\n", i + 1, sym, start, end - 1, end - start);
+        }
+    }
+    printf("\n");
 }
